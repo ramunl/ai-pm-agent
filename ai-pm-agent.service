@@ -1,0 +1,15 @@
+[Unit]
+Description=Telegram AI PM agent (rules management)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/ai-pm-agent
+EnvironmentFile=/etc/ai-pm-agent.env
+ExecStart=/opt/ai_pm_venv/bin/python -m ai_pm_agent
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
