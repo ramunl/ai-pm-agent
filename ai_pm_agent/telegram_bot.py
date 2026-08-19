@@ -2,12 +2,21 @@
 
 import logging
 
-from telegram import Update
+from telegram import BotCommand, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 from . import config, rules_repo
 
 logger = logging.getLogger(__name__)
+
+BOT_COMMANDS = (
+    BotCommand("start", "Show available commands"),
+    BotCommand("files", "List all rule files"),
+    BotCommand("rules", "Show rules in a file"),
+    BotCommand("addrule", "Add a rule"),
+    BotCommand("removerule", "Remove a rule"),
+    BotCommand("sync", "Pull the latest rules from GitHub"),
+)
 
 
 def is_authorized(update: Update) -> bool:
@@ -134,8 +143,19 @@ async def removerule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             await reply(update, "Usage: /removerule <file> <number>")
 
 
+async def register_commands(app: Application) -> None:
+    """Register commands so Telegram shows suggestions after typing `/`."""
+    await app.bot.set_my_commands(BOT_COMMANDS)
+    logger.info("Registered %d Telegram command hints", len(BOT_COMMANDS))
+
+
 def build_application() -> Application:
-    app = Application.builder().token(config.PM_TELEGRAM_BOT_TOKEN).build()
+    app = (
+        Application.builder()
+        .token(config.PM_TELEGRAM_BOT_TOKEN)
+        .post_init(register_commands)
+        .build()
+    )
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("sync", sync))
     app.add_handler(CommandHandler("files", files))
