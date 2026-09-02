@@ -94,3 +94,40 @@ ai-rules is public, but pushing still needs auth. Two options:
 - Only the authorized chat ID can issue commands; others are ignored + logged
 - No free-form shell execution — git operations use fixed argument lists
 - The agent only ever touches the ai-rules working copy
+
+## TODO lists (per project)
+
+The PM agent also manages per-project TODO lists in a separate `ai-todos`
+repo, stored as `projects/<project>/todo.md` with markdown checkboxes.
+
+| Command | Description |
+|---|---|
+| /todo | Show the active todo project |
+| /todo_use \<project\> | Switch the active todo project |
+| /todo_list | Show open items for the active project |
+| /todo_add \<text\> | Add an item to the active project |
+| /todo_done \<number\> | Mark open item N done (by /todo_list number) |
+| /todo_projects | List projects that have todo lists |
+
+### Independent active-project state
+
+The todo list has its **own** active project, stored on the server in
+`TODOS_STATE_FILE`, deliberately separate from the coding agent's active
+project. Switching the coding agent's project with `/repo_use` does **not**
+change which todo list is active, and vice versa. This avoids coupling two
+processes through shared state. Every todo reply names the active project so
+the two can never drift silently.
+
+Because completing an item marks it `- [x]` rather than deleting it,
+`/todo_done` numbers refer to **open** items only; the numbering shifts after
+each completion, so re-run `/todo_list` before the next `/todo_done`.
+
+### Setup
+
+```bash
+# Create the ai-todos repo on GitHub, then on the server it clones on first use.
+# Env (optional; sane defaults shown):
+TODOS_REPO_PATH=/opt/ai-todos
+TODOS_REPO_URL=git@github.com:ramunl/ai-todos.git
+TODOS_STATE_FILE=/opt/ai-todos-active.txt
+```

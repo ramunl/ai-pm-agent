@@ -18,7 +18,9 @@ class RegisterCommandsTest(unittest.IsolatedAsyncioTestCase):
 
         app.bot.set_my_commands.assert_awaited_once_with(BOT_COMMANDS)
         self.assertEqual(
-            ["start", "files", "rules", "addrule", "removerule", "sync"],
+            ["start", "files", "rules", "addrule", "removerule", "sync",
+             "todo", "todo_use", "todo_list", "todo_add", "todo_done",
+             "todo_projects"],
             [command.command for command in BOT_COMMANDS],
         )
 
