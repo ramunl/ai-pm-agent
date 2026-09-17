@@ -24,8 +24,10 @@ class TodosRepoTest(unittest.TestCase):
         import importlib
 
         from ai_pm_agent import config as config_module
+
         importlib.reload(config_module)
         from ai_pm_agent import todos_repo as todos_module
+
         importlib.reload(todos_module)
         self.todos = todos_module
 

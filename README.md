@@ -131,3 +131,25 @@ TODOS_REPO_PATH=/opt/ai-todos
 TODOS_REPO_URL=git@github.com:ramunl/ai-todos.git
 TODOS_STATE_FILE=/opt/ai-todos-active.txt
 ```
+
+## Development
+
+Follow the Python rules in `ai-rules/global/python.md`. Telegram adapters live in
+`ai_pm_agent/bot`; rules and TODO markdown operations share the Git service in
+`ai_pm_agent/git_repo.py`. See [architecture and edit flow](docs/architecture.md).
+
+```bash
+python -m pip install -r requirements-dev.txt
+ruff check ai_pm_agent tests
+ruff format --check ai_pm_agent tests
+ruff check ai_pm_agent --select ANN001,ANN201,ANN202,D100,D101,D102,D103
+python -m pytest -q
+```
+
+Run `ruff format ai_pm_agent tests` before committing. CI uses Python 3.12 and
+runs these checks on pull requests and pushes to `main`.
+
+Commands now stop before editing if repository synchronization fails. A failed
+Git configuration, staging, commit, or push is reported as a failure; a failed
+push no longer receives a success checkmark. Successful command syntax and
+markdown numbering are unchanged.

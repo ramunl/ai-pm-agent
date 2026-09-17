@@ -8,8 +8,9 @@ logger = logging.getLogger(__name__)
 DEFAULT_TIMEOUT = 120
 
 
-def run(cmd: list[str], cwd: str | None = None,
-        timeout: int = DEFAULT_TIMEOUT) -> tuple[bool, str]:
+def run(
+    cmd: list[str], cwd: str | None = None, timeout: int = DEFAULT_TIMEOUT
+) -> tuple[bool, str]:
     """Run a command. Returns (ok, output).
 
     ok is True when the process exits 0. Output is stdout+stderr combined.

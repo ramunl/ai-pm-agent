@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
+    """Configure and start the Telegram application."""
     logger.info("PM agent starting")
     ok, output = rules_repo.ensure_repo()
     if not ok:
