@@ -20,6 +20,9 @@ code. Build that wiring first; review comes later.
 
 | Command | Description |
 |---|---|
+| /help | Show the shared command catalog |
+| /version | Show the agent, branch, commit, and shared-core version |
+| /core | Show the pinned shared-core release |
 | /files | List all rule files in the repo |
 | /rules \<file\> | Show numbered rules in a file |
 | /addrule \<file\> \| \<rule text\> | Add a rule (creates file if new) |
@@ -47,8 +50,8 @@ ai-pm-agent          ai-coding-agent
 (this repo)          (injects rules into Claude prompts)
 ```
 
-The PM agent is the only writer. The coding agent is a reader. They never
-share logic — only the rules repo.
+The PM agent is the only rules writer. The coding agent is a rules reader.
+All agent bots share infrastructure through the `ai-agent-common` submodule.
 
 ## Setup
 
@@ -56,7 +59,7 @@ share logic — only the rules repo.
 # 1. Create a THIRD Telegram bot via @BotFather (e.g. @channelcast_pm_bot)
 
 # 2. Clone and install
-sudo git clone git@github.com:ramunl/ai-pm-agent.git /opt/ai-pm-agent
+sudo git clone --recurse-submodules git@github.com:ramunl/ai-pm-agent.git /opt/ai-pm-agent
 python3 -m venv /opt/ai_pm_venv
 /opt/ai_pm_venv/bin/pip install -r /opt/ai-pm-agent/requirements.txt
 

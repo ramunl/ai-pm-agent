@@ -1,41 +1,62 @@
 """Telegram bot for managing coding rules in the ai-rules repo."""
 
+import asyncio
 import logging
+from pathlib import Path
 
-from telegram import BotCommand, Update
+from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
+
+from ai_agent_common import (
+    Command,
+    CoreCommand,
+    build_command_list,
+    get_runtime_version,
+    is_authorized as shared_is_authorized,
+    render_help,
+    to_bot_commands,
+)
 
 from . import config, rules_repo, todos_repo
 
 logger = logging.getLogger(__name__)
 
-BOT_COMMANDS = (
-    BotCommand("start", "Show available commands"),
-    BotCommand("files", "List all rule files"),
-    BotCommand("rules", "Show rules in a file"),
-    BotCommand("addrule", "Add a rule"),
-    BotCommand("removerule", "Remove a rule"),
-    BotCommand("sync", "Pull the latest rules from GitHub"),
-    BotCommand("todo", "Show the active todo project"),
-    BotCommand("todo_use", "Switch the active todo project"),
-    BotCommand("todo_list", "Show todos for the active project"),
-    BotCommand("todo_add", "Add a todo to the active project"),
-    BotCommand("todo_done", "Mark a todo done by number"),
-    BotCommand("todo_projects", "List projects that have todo lists"),
+ROOT_DIR = Path(__file__).resolve().parent.parent
+_CORE_COMMAND = CoreCommand(
+    submodule_dir=ROOT_DIR / "ai_agent_common",
+    superproject_dir=ROOT_DIR,
+    submodule_path="ai_agent_common",
+    agent_name="ai-pm-agent",
 )
+
+COMMANDS = build_command_list(
+    [
+        Command("start", "Show available commands"),
+        Command("files", "List all rule files"),
+        Command("rules", "Show rules in a file"),
+        Command("addrule", "Add a rule"),
+        Command("removerule", "Remove a rule"),
+        Command("sync", "Pull the latest rules from GitHub"),
+        Command("core", "Show the shared core version"),
+        Command("todo", "Show the active todo project"),
+        Command("todo_use", "Switch the active todo project"),
+        Command("todo_list", "Show todos for the active project"),
+        Command("todo_add", "Add a todo to the active project"),
+        Command("todo_done", "Mark a todo done by number"),
+        Command("todo_projects", "List projects that have todo lists"),
+    ]
+)
+BOT_COMMANDS = tuple(to_bot_commands(COMMANDS))
 
 
 def is_authorized(update: Update) -> bool:
-    isAuthorized = (
-        update.message is not None
-        and update.message.chat_id == config.AUTHORIZED_CHAT_ID
-    )
-    if not isAuthorized:
+    authorized = shared_is_authorized(update, config.AUTHORIZED_CHAT_ID)
+    if not authorized:
         logger.warning(
             "Ignored message from unauthorized chat: %s",
-            update.message.chat_id if update.message else "unknown",
+            getattr(getattr(update, "effective_chat", None), "id", "unknown"),
         )
-    return isAuthorized
+    return authorized
 
 
 async def reply(update: Update, text: str) -> None:
@@ -52,22 +73,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if is_authorized(update):
         await reply(
             update,
-            "📐 PM Agent — rules management\n\n"
-            "/files - list all rule files\n"
-            "/rules <file> - show rules in a file\n"
-            "/addrule <file> | <rule text> - add a rule\n"
-            "/removerule <file> <number> - remove a rule\n"
-            "/sync - pull latest rules from GitHub\n\n"
-            "TODO lists (per project, independent of the coding agent):\n"
-            "/todo - show the active todo project\n"
-            "/todo_use <project> - switch active todo project\n"
-            "/todo_list - show todos for the active project\n"
-            "/todo_add <text> - add a todo\n"
-            "/todo_done <number> - mark a todo done\n"
-            "/todo_projects - list projects with todo lists\n\n"
-            "Example:\n"
-            "/addrule kotlin | Prefer sealed classes for UI state",
+            render_help(
+                "PM Agent",
+                COMMANDS,
+                intro="Rules and per-project TODO management.",
+            ),
         )
+
+
+async def version(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Report the PM agent version using the shared core implementation."""
+    if is_authorized(update):
+        text = get_runtime_version("ai-pm-agent", ROOT_DIR)
+        await reply(update, f"{text}\n{_CORE_COMMAND.short_line()}")
+
+
+async def core(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Report this bot's pinned shared-core version."""
+    if is_authorized(update):
+        text = await asyncio.to_thread(_CORE_COMMAND.status_text)
+        await reply(update, text)
 
 
 async def sync(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -128,8 +153,7 @@ async def addrule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         else:
             await reply(
                 update,
-                "Missing separator.\n"
-                "Usage: /addrule <file> | <rule text>",
+                "Missing separator.\n" "Usage: /addrule <file> | <rule text>",
             )
 
 
@@ -238,9 +262,7 @@ async def todo_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 todos_repo.ensure_repo()
                 ok, msg = todos_repo.add_todo(project, text)
                 if ok:
-                    _, push_msg = todos_repo.commit_and_push(
-                        f"todos: add to {project}"
-                    )
+                    _, push_msg = todos_repo.commit_and_push(f"todos: add to {project}")
                     await reply(update, f"✅ {msg}\n{push_msg}")
                 else:
                     await reply(update, f"⚠️ {msg}")
@@ -283,6 +305,9 @@ def build_application() -> Application:
         .build()
     )
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", start))
+    app.add_handler(CommandHandler("version", version))
+    app.add_handler(CommandHandler("core", core))
     app.add_handler(CommandHandler("sync", sync))
     app.add_handler(CommandHandler("files", files))
     app.add_handler(CommandHandler("rules", rules))
