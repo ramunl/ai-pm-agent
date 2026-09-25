@@ -1,6 +1,7 @@
 """Telegram bot for managing coding rules in the ai-rules repo."""
 
 import asyncio
+import contextlib
 import logging
 from pathlib import Path
 
@@ -297,11 +298,41 @@ async def register_commands(app: Application) -> None:
     logger.info("Registered %d Telegram command hints", len(BOT_COMMANDS))
 
 
+_publisher_task: asyncio.Task | None = None
+
+
+async def on_startup(app: Application) -> None:
+    """Register command hints, then start publishing the dashboard snapshot.
+
+    Kept separate from register_commands so tests of the command hints never
+    start a publisher that writes to the real snapshot path.
+    """
+    global _publisher_task
+    await register_commands(app)
+    if _publisher_task is None or _publisher_task.done():
+        from .snapshot import publish_forever
+
+        _publisher_task = asyncio.get_running_loop().create_task(
+            publish_forever(Path(config.PM_SNAPSHOT_FILE))
+        )
+
+
+async def on_shutdown(app: Application) -> None:
+    """Stop publishing on a clean shutdown."""
+    global _publisher_task
+    if _publisher_task is not None:
+        _publisher_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await _publisher_task
+        _publisher_task = None
+
+
 def build_application() -> Application:
     app = (
         Application.builder()
         .token(config.PM_TELEGRAM_BOT_TOKEN)
-        .post_init(register_commands)
+        .post_init(on_startup)
+        .post_shutdown(on_shutdown)
         .build()
     )
     app.add_handler(CommandHandler("start", start))

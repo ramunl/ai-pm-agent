@@ -134,3 +134,18 @@ TODOS_REPO_PATH=/opt/ai-todos
 TODOS_REPO_URL=git@github.com:ramunl/ai-todos.git
 TODOS_STATE_FILE=/opt/ai-todos-active.txt
 ```
+
+## Dashboard snapshot
+
+The PM agent publishes a secret-free read model for the separate
+**ai-dashboard** service, which shows it as the PM window (`/pm`):
+
+- file: `PM_SNAPSHOT_FILE` (default `/var/lib/ai-pm-agent/snapshot.json`), mode 0600
+- written on change and at least every 30 s (heartbeat), atomically
+- content (`"format": 1`): active todo project, its open items (first 50) and
+  done count, every project's open/done counts, rule files with rule counts,
+  agent and core version
+
+Todo and rule parsing stays in `todos_repo` / `rules_repo`
+(`todo_summary()`, `rule_counts()`), so the dashboard never parses these files
+itself. Publishing starts with the bot and never blocks or crashes it.
