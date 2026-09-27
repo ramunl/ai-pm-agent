@@ -78,6 +78,19 @@ def _item_text(line: str) -> str:
     return stripped[len("- [ ] ") :].strip()
 
 
+def todo_summary(project: str) -> dict:
+    """Open item texts and done count for a project; empty if no list yet."""
+    path = _todo_path(project)
+    if not path.is_file():
+        return {"open": [], "done": 0}
+    content = path.read_text(encoding="utf-8")
+    lines = content.splitlines()
+    return {
+        "open": [_item_text(lines[i]) for i in _checkbox_lines(content, done=False)],
+        "done": len(_checkbox_lines(content, done=True)),
+    }
+
+
 def numbered_todos(project: str) -> tuple[bool, str]:
     """Open items numbered, followed by a count of done items."""
     path = _todo_path(project)

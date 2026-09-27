@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/opt/ai-pm-agent
 EnvironmentFile=/etc/ai-pm-agent.env
+ExecStartPre=/usr/bin/git -C /opt/ai-pm-agent submodule update --init --recursive
 ExecStart=/opt/ai_pm_venv/bin/python -m ai_pm_agent
 Restart=always
 RestartSec=5

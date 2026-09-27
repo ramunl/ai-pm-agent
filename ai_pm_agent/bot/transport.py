@@ -6,6 +6,7 @@ import logging
 
 from telegram import Update
 
+from ai_agent_common import is_authorized as shared_is_authorized
 from ai_pm_agent import config
 
 logger = logging.getLogger(__name__)
@@ -13,16 +14,13 @@ logger = logging.getLogger(__name__)
 
 def is_authorized(update: Update) -> bool:
     """Check the owner chat and log unauthorized messages."""
-    is_authorized_chat = (
-        update.message is not None
-        and update.message.chat_id == config.AUTHORIZED_CHAT_ID
-    )
-    if not is_authorized_chat:
+    authorized = shared_is_authorized(update, config.AUTHORIZED_CHAT_ID)
+    if not authorized:
         logger.warning(
             "Ignored message from unauthorized chat: %s",
-            update.message.chat_id if update.message else "unknown",
+            getattr(getattr(update, "effective_chat", None), "id", "unknown"),
         )
-    return is_authorized_chat
+    return authorized
 
 
 async def reply(update: Update, text: str) -> None:

@@ -21,6 +21,12 @@ TODOS_REPO_URL = os.environ.get("TODOS_REPO_URL", "git@github.com:ramunl/ai-todo
 # from the coding agent's active project: the two are not coupled.
 TODOS_STATE_FILE = os.environ.get("TODOS_STATE_FILE", "/opt/ai-todos-active.txt")
 
+# Read model for the dashboard service (a separate process). Holds todo
+# texts and rule counts, no tokens.
+PM_SNAPSHOT_FILE = os.environ.get(
+    "PM_SNAPSHOT_FILE", "/var/lib/ai-pm-agent/snapshot.json"
+)
+
 # Git identity used for commits made by the agent.
 GIT_AUTHOR_NAME = os.environ.get("PM_GIT_NAME", "ai-pm-agent")
 GIT_AUTHOR_EMAIL = os.environ.get("PM_GIT_EMAIL", "ai-pm-agent@localhost")

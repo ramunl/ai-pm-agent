@@ -1,20 +1,22 @@
-"""Define command names and autocomplete descriptions."""
+"""Define the shared command catalog and Telegram hints."""
 
-from __future__ import annotations
+from ai_agent_common import Command, build_command_list, to_bot_commands
 
-from telegram import BotCommand
-
-BOT_COMMANDS = (
-    BotCommand("start", "Show available commands"),
-    BotCommand("files", "List all rule files"),
-    BotCommand("rules", "Show rules in a file"),
-    BotCommand("addrule", "Add a rule"),
-    BotCommand("removerule", "Remove a rule"),
-    BotCommand("sync", "Pull the latest rules from GitHub"),
-    BotCommand("todo", "Show the active todo project"),
-    BotCommand("todo_use", "Switch the active todo project"),
-    BotCommand("todo_list", "Show todos for the active project"),
-    BotCommand("todo_add", "Add a todo to the active project"),
-    BotCommand("todo_done", "Mark a todo done by number"),
-    BotCommand("todo_projects", "List projects that have todo lists"),
+COMMANDS = build_command_list(
+    [
+        Command("start", "Show available commands"),
+        Command("files", "List all rule files"),
+        Command("rules", "Show rules in a file"),
+        Command("addrule", "Add a rule"),
+        Command("removerule", "Remove a rule"),
+        Command("sync", "Pull the latest rules from GitHub"),
+        Command("core", "Show the shared core version"),
+        Command("todo", "Show the active todo project"),
+        Command("todo_use", "Switch the active todo project"),
+        Command("todo_list", "Show todos for the active project"),
+        Command("todo_add", "Add a todo to the active project"),
+        Command("todo_done", "Mark a todo done by number"),
+        Command("todo_projects", "List projects that have todo lists"),
+    ]
 )
+BOT_COMMANDS = tuple(to_bot_commands(COMMANDS))

@@ -10,7 +10,7 @@ rule numbering, TODO numbering, and the independent active-project state remain.
 | --- | --- |
 | `bot/catalog.py` | Autocomplete command metadata |
 | `bot/transport.py` | Owner authorization and bounded plain-text replies |
-| `bot/help.py` | Command reference |
+| `bot/help.py` | Shared command reference, runtime version, and core status |
 | `bot/rules.py` | Rule command validation and orchestration |
 | `bot/todos.py` | TODO project selection and command orchestration |
 | `bot/repository_actions.py` | Synchronization gates and publication-result replies |
@@ -19,11 +19,16 @@ rule numbering, TODO numbering, and the independent active-project state remain.
 | `git_repo.py` | Shared clone, fast-forward, commit, and push operations |
 | `shell.py` | Subprocess execution with argument lists |
 | `config.py` | Repository paths, remotes, identity, and Telegram settings |
+| `snapshot.py` | Dashboard read model, atomic writes, and heartbeat publishing |
 
 Dependencies flow from command adapters to repositories, the shared Git service,
 and shell execution. Neither repository imports command handlers. Rules and TODO
 repositories keep their existing public functions; those functions build an
 immutable `RepositoryConfig` from current settings and delegate Git operations.
+
+Shared-core authorization and command catalogs remain in use. Application startup
+registers commands and starts the snapshot publisher; shutdown cancels and awaits
+the publisher. The dashboard snapshot format and file permissions are unchanged.
 
 ## Edit and publication flow
 

@@ -62,7 +62,8 @@ async def addrule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not name or not rule_text:
         await reply(
             update,
-            "Both file and rule text are required.\nUsage: /addrule <file> | <rule text>",
+            "Both file and rule text are required.\n"
+            "Usage: /addrule <file> | <rule text>",
         )
         return
     if not await require_repository(update, rules_repo.ensure_repo):

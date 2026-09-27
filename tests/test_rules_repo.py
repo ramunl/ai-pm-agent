@@ -34,3 +34,21 @@ def test_missing_or_invalid_rule_number_does_not_change_file(rules_root):
     assert not rules_repo.remove_rule("python", 2)[0]
     assert path.read_text() == content
     assert not rules_repo.read_rules("missing")[0]
+
+
+def test_rule_counts_logs_unreadable_files(tmp_path, monkeypatch, caplog):
+    from pathlib import Path
+
+    from ai_pm_agent import config, rules_repo
+
+    path = tmp_path / "rules.md"
+    path.write_text("- rule\n")
+    monkeypatch.setattr(config, "RULES_REPO_PATH", str(tmp_path))
+
+    def unreadable(self, **kwargs):
+        raise PermissionError("unreadable")
+
+    monkeypatch.setattr(Path, "read_text", unreadable)
+
+    assert rules_repo.rule_counts() == []
+    assert "Could not count rules" in caplog.text

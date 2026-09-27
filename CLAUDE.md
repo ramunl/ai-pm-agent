@@ -8,8 +8,8 @@ coding rules in `ai-rules` and per-project TODO lists in `ai-todos`.
 - Run the bot: `python -m ai_pm_agent`.
 - Install development dependencies: `python -m pip install -r requirements-dev.txt`.
 - Format before committing: `ruff format ai_pm_agent tests`.
-- Validate: `ruff check ai_pm_agent tests`, the type-hint/docstring check documented
-  in README, and `python -m pytest -q`.
+- Validate: `ruff check ai_pm_agent tests`, `ruff format --check ai_pm_agent tests`,
+  and `python -m pytest -q`. Annotation and docstring checks are part of Ruff.
 - Tests use dummy credentials and temporary repositories; do not start the live
   bot to validate a code change.
 

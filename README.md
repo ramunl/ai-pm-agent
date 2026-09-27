@@ -20,6 +20,9 @@ code. Build that wiring first; review comes later.
 
 | Command | Description |
 |---|---|
+| /help | Show the shared command catalog |
+| /version | Show the agent, branch, commit, and shared-core version |
+| /core | Show the pinned shared-core release |
 | /files | List all rule files in the repo |
 | /rules \<file\> | Show numbered rules in a file |
 | /addrule \<file\> \| \<rule text\> | Add a rule (creates file if new) |
@@ -47,8 +50,8 @@ ai-pm-agent          ai-coding-agent
 (this repo)          (injects rules into Claude prompts)
 ```
 
-The PM agent is the only writer. The coding agent is a reader. They never
-share logic — only the rules repo.
+The PM agent is the only rules writer. The coding agent is a rules reader.
+All agent bots share infrastructure through the `ai-agent-common` submodule.
 
 ## Setup
 
@@ -56,7 +59,7 @@ share logic — only the rules repo.
 # 1. Create a THIRD Telegram bot via @BotFather (e.g. @channelcast_pm_bot)
 
 # 2. Clone and install
-sudo git clone git@github.com:ramunl/ai-pm-agent.git /opt/ai-pm-agent
+sudo git clone --recurse-submodules git@github.com:ramunl/ai-pm-agent.git /opt/ai-pm-agent
 python3 -m venv /opt/ai_pm_venv
 /opt/ai_pm_venv/bin/pip install -r /opt/ai-pm-agent/requirements.txt
 
@@ -132,6 +135,21 @@ TODOS_REPO_URL=git@github.com:ramunl/ai-todos.git
 TODOS_STATE_FILE=/opt/ai-todos-active.txt
 ```
 
+## Dashboard snapshot
+
+The PM agent publishes a secret-free read model for the separate
+**ai-dashboard** service, which shows it as the PM window (`/pm`):
+
+- file: `PM_SNAPSHOT_FILE` (default `/var/lib/ai-pm-agent/snapshot.json`), mode 0600
+- written on change and at least every 30 s (heartbeat), atomically
+- content (`"format": 1`): active todo project, its open items (first 50) and
+  done count, every project's open/done counts, rule files with rule counts,
+  agent and core version
+
+Todo and rule parsing stays in `todos_repo` / `rules_repo`
+(`todo_summary()`, `rule_counts()`), so the dashboard never parses these files
+itself. Publishing starts with the bot and never blocks or crashes it.
+
 ## Development
 
 Follow the Python rules in `ai-rules/global/python.md`. Telegram adapters live in
@@ -142,7 +160,6 @@ Follow the Python rules in `ai-rules/global/python.md`. Telegram adapters live i
 python -m pip install -r requirements-dev.txt
 ruff check ai_pm_agent tests
 ruff format --check ai_pm_agent tests
-ruff check ai_pm_agent --select ANN001,ANN201,ANN202,D100,D101,D102,D103
 python -m pytest -q
 ```
 

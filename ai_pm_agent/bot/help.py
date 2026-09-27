@@ -1,32 +1,49 @@
-"""Show the PM agent command reference."""
+"""Show help, runtime versions, and shared-core status."""
 
-from __future__ import annotations
+import asyncio
+from pathlib import Path
 
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from ai_agent_common import CoreCommand, get_runtime_version, render_help
+from ai_pm_agent.bot.catalog import COMMANDS
 from ai_pm_agent.bot.transport import is_authorized, reply
+
+ROOT_DIR = Path(__file__).resolve().parents[2]
+_CORE_COMMAND = CoreCommand(
+    submodule_dir=ROOT_DIR / "ai_agent_common",
+    superproject_dir=ROOT_DIR,
+    submodule_path="ai_agent_common",
+    agent_name="ai-pm-agent",
+)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show the available commands and their usage."""
+    """Show the PM command catalog."""
     if not is_authorized(update):
         return
     await reply(
         update,
-        "📐 PM Agent — rules management\n\n"
-        "/files - list all rule files\n"
-        "/rules <file> - show rules in a file\n"
-        "/addrule <file> | <rule text> - add a rule\n"
-        "/removerule <file> <number> - remove a rule\n"
-        "/sync - pull latest rules from GitHub\n\n"
-        "TODO lists (per project, independent of the coding agent):\n"
-        "/todo - show the active todo project\n"
-        "/todo_use <project> - switch active todo project\n"
-        "/todo_list - show todos for the active project\n"
-        "/todo_add <text> - add a todo\n"
-        "/todo_done <number> - mark a todo done\n"
-        "/todo_projects - list projects with todo lists\n\n"
-        "Example:\n"
-        "/addrule kotlin | Prefer sealed classes for UI state",
+        render_help(
+            "PM Agent",
+            COMMANDS,
+            intro="Rules and per-project TODO management.",
+        ),
     )
+
+
+async def version(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Report the PM agent version using the shared core implementation."""
+    if not is_authorized(update):
+        return
+    text = get_runtime_version("ai-pm-agent", ROOT_DIR)
+    await reply(update, f"{text}\n{_CORE_COMMAND.short_line()}")
+
+
+async def core(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Report this bot's pinned shared-core version."""
+    if not is_authorized(update):
+        return
+    text = await asyncio.to_thread(_CORE_COMMAND.status_text)
+    await reply(update, text)

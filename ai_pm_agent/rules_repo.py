@@ -39,6 +39,24 @@ def list_files() -> list[str]:
     return names
 
 
+def rule_counts() -> list[dict]:
+    """Each rule file (relative path) with how many rules it holds."""
+    counts = []
+    for path in _rule_files():
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as error:
+            logger.warning("Could not count rules in %s: %s", path, error)
+            continue
+        counts.append(
+            {
+                "file": str(path.relative_to(config.RULES_REPO_PATH)),
+                "count": len(_bullet_lines(text)),
+            }
+        )
+    return counts
+
+
 def _resolve_file(name: str) -> Path | None:
     """Find a rule file by stem, file name, or relative path."""
     candidates = _rule_files()

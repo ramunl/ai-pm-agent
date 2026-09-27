@@ -17,7 +17,8 @@ async def _require_active_project(update: Update) -> str | None:
         return project
     await reply(
         update,
-        "No active todo project. Set one with /todo_use <project>, then /todo_add works against it.",
+        "No active todo project. Set one with /todo_use <project>, "
+        "then /todo_add works against it.",
     )
     return None
 
@@ -46,7 +47,8 @@ async def todo_use(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     todos_repo.set_active_project(project)
     await reply(
         update,
-        f"📌 Active todo project is now: {project}\nThis is separate from the coding agent's project.",
+        f"📌 Active todo project is now: {project}\n"
+        "This is separate from the coding agent's project.",
     )
 
 
