@@ -7,35 +7,16 @@ name (e.g. 'kotlin', 'architecture') and a 1-based index within that file.
 """
 
 import logging
-import os
 from pathlib import Path
 
-from . import config
-from .shell import run
+from ai_pm_agent import config, git_repo
 
 logger = logging.getLogger(__name__)
 
 
 def ensure_repo() -> tuple[bool, str]:
-    """Clone the rules repo if missing, otherwise pull the latest."""
-    repo_exists = os.path.isdir(os.path.join(config.RULES_REPO_PATH, ".git"))
-    if repo_exists:
-        ok, output = run(
-            ["git", "pull", "--ff-only", "origin", "main"],
-            cwd=config.RULES_REPO_PATH,
-        )
-        if not ok:
-            logger.error("Could not pull rules repo: %s", output)
-        return ok, output
-
-    parent = os.path.dirname(config.RULES_REPO_PATH)
-    Path(parent).mkdir(parents=True, exist_ok=True)
-    ok, output = run(
-        ["git", "clone", config.RULES_REPO_URL, config.RULES_REPO_PATH]
-    )
-    if not ok:
-        logger.error("Could not clone rules repo: %s", output)
-    return ok, output
+    """Synchronize the repository before reading or editing markdown."""
+    return git_repo.ensure_repo(_repository())
 
 
 def _rule_files() -> list[Path]:
@@ -44,8 +25,7 @@ def _rule_files() -> list[Path]:
     files = sorted(
         path
         for path in root.rglob("*.md")
-        if path.name.lower() != "readme.md"
-        and ".git" not in path.parts
+        if path.name.lower() != "readme.md" and ".git" not in path.parts
     )
     return files
 
@@ -65,7 +45,8 @@ def rule_counts() -> list[dict]:
     for path in _rule_files():
         try:
             text = path.read_text(encoding="utf-8")
-        except OSError:
+        except OSError as error:
+            logger.warning("Could not count rules in %s: %s", path, error)
             continue
         counts.append(
             {
@@ -145,9 +126,7 @@ def add_rule(name: str, rule_text: str) -> tuple[bool, str]:
     existing = path.read_text(encoding="utf-8")
     needs_newline = existing and not existing.endswith("\n")
     separator = "\n" if needs_newline else ""
-    path.write_text(
-        existing + separator + f"- {rule_text}\n", encoding="utf-8"
-    )
+    path.write_text(existing + separator + f"- {rule_text}\n", encoding="utf-8")
     rel = path.relative_to(config.RULES_REPO_PATH)
     return True, f"Added to {rel}"
 
@@ -172,26 +151,16 @@ def remove_rule(name: str, number: int) -> tuple[bool, str]:
 
 
 def commit_and_push(message: str) -> tuple[bool, str]:
-    """Stage everything, commit with identity, and push to main."""
-    run(["git", "config", "user.name", config.GIT_AUTHOR_NAME],
-        cwd=config.RULES_REPO_PATH)
-    run(["git", "config", "user.email", config.GIT_AUTHOR_EMAIL],
-        cwd=config.RULES_REPO_PATH)
+    """Publish markdown edits using the configured repository identity."""
+    return git_repo.commit_and_push(_repository(), message)
 
-    run(["git", "add", "-A"], cwd=config.RULES_REPO_PATH)
 
-    ok_commit, commit_out = run(
-        ["git", "commit", "-m", message], cwd=config.RULES_REPO_PATH
+def _repository() -> git_repo.RepositoryConfig:
+    """Read repository settings at call time to keep configuration changes visible."""
+    return git_repo.RepositoryConfig(
+        path=config.RULES_REPO_PATH,
+        url=config.RULES_REPO_URL,
+        label="ai-rules",
+        author_name=config.GIT_AUTHOR_NAME,
+        author_email=config.GIT_AUTHOR_EMAIL,
     )
-    nothing_to_commit = (not ok_commit) and "nothing to commit" in commit_out
-    if nothing_to_commit:
-        return True, "No changes to push."
-    if not ok_commit:
-        return False, commit_out
-
-    ok_push, push_out = run(
-        ["git", "push", "origin", "main"], cwd=config.RULES_REPO_PATH
-    )
-    if not ok_push:
-        return False, push_out
-    return True, "Pushed to ai-rules."

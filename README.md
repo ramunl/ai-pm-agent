@@ -149,3 +149,24 @@ The PM agent publishes a secret-free read model for the separate
 Todo and rule parsing stays in `todos_repo` / `rules_repo`
 (`todo_summary()`, `rule_counts()`), so the dashboard never parses these files
 itself. Publishing starts with the bot and never blocks or crashes it.
+
+## Development
+
+Follow the Python rules in `ai-rules/global/python.md`. Telegram adapters live in
+`ai_pm_agent/bot`; rules and TODO markdown operations share the Git service in
+`ai_pm_agent/git_repo.py`. See [architecture and edit flow](docs/architecture.md).
+
+```bash
+python -m pip install -r requirements-dev.txt
+ruff check ai_pm_agent tests
+ruff format --check ai_pm_agent tests
+python -m pytest -q
+```
+
+Run `ruff format ai_pm_agent tests` before committing. CI uses Python 3.12 and
+runs these checks on pull requests and pushes to `main`.
+
+Commands now stop before editing if repository synchronization fails. A failed
+Git configuration, staging, commit, or push is reported as a failure; a failed
+push no longer receives a success checkmark. Successful command syntax and
+markdown numbering are unchanged.

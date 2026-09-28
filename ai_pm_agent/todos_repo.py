@@ -13,35 +13,16 @@ coupled, so selecting a project here never affects code changes there.
 """
 
 import logging
-import os
 from pathlib import Path
 
-from . import config
-from .shell import run
+from ai_pm_agent import config, git_repo
 
 logger = logging.getLogger(__name__)
 
 
 def ensure_repo() -> tuple[bool, str]:
-    """Clone the todos repo if missing, otherwise pull the latest."""
-    repo_exists = os.path.isdir(os.path.join(config.TODOS_REPO_PATH, ".git"))
-    if repo_exists:
-        ok, output = run(
-            ["git", "pull", "--ff-only", "origin", "main"],
-            cwd=config.TODOS_REPO_PATH,
-        )
-        if not ok:
-            logger.error("Could not pull todos repo: %s", output)
-        return ok, output
-
-    parent = os.path.dirname(config.TODOS_REPO_PATH)
-    Path(parent).mkdir(parents=True, exist_ok=True)
-    ok, output = run(
-        ["git", "clone", config.TODOS_REPO_URL, config.TODOS_REPO_PATH]
-    )
-    if not ok:
-        logger.error("Could not clone todos repo: %s", output)
-    return ok, output
+    """Synchronize the repository before reading or editing markdown."""
+    return git_repo.ensure_repo(_repository())
 
 
 # ---------------------------------------------------------------- active project
@@ -58,6 +39,7 @@ def active_project() -> str | None:
 
 
 def set_active_project(name: str) -> None:
+    """Persist the PM-owned active TODO project on disk."""
     state = Path(config.TODOS_STATE_FILE)
     state.parent.mkdir(parents=True, exist_ok=True)
     state.write_text(name.strip() + "\n", encoding="utf-8")
@@ -69,9 +51,7 @@ def list_projects() -> list[str]:
     projects_dir = Path(config.TODOS_REPO_PATH) / "projects"
     exists = projects_dir.is_dir()
     if exists:
-        return sorted(
-            child.name for child in projects_dir.iterdir() if child.is_dir()
-        )
+        return sorted(child.name for child in projects_dir.iterdir() if child.is_dir())
     return []
 
 
@@ -95,7 +75,7 @@ def _checkbox_lines(text: str, done: bool) -> list[int]:
 
 def _item_text(line: str) -> str:
     stripped = line.lstrip()
-    return stripped[len("- [ ] "):].strip()
+    return stripped[len("- [ ] ") :].strip()
 
 
 def todo_summary(project: str) -> dict:
@@ -176,25 +156,16 @@ def complete_todo(project: str, number: int) -> tuple[bool, str]:
 
 
 def commit_and_push(message: str) -> tuple[bool, str]:
-    """Stage everything, commit with identity, and push to main."""
-    run(["git", "config", "user.name", config.GIT_AUTHOR_NAME],
-        cwd=config.TODOS_REPO_PATH)
-    run(["git", "config", "user.email", config.GIT_AUTHOR_EMAIL],
-        cwd=config.TODOS_REPO_PATH)
-    run(["git", "add", "-A"], cwd=config.TODOS_REPO_PATH)
+    """Publish markdown edits using the configured repository identity."""
+    return git_repo.commit_and_push(_repository(), message)
 
-    ok_commit, commit_out = run(
-        ["git", "commit", "-m", message], cwd=config.TODOS_REPO_PATH
-    )
-    nothing_to_commit = (not ok_commit) and "nothing to commit" in commit_out
-    if nothing_to_commit:
-        return True, "No changes to push."
-    if not ok_commit:
-        return False, commit_out
 
-    ok_push, push_out = run(
-        ["git", "push", "origin", "main"], cwd=config.TODOS_REPO_PATH
+def _repository() -> git_repo.RepositoryConfig:
+    """Read repository settings at call time to keep configuration changes visible."""
+    return git_repo.RepositoryConfig(
+        path=config.TODOS_REPO_PATH,
+        url=config.TODOS_REPO_URL,
+        label="ai-todos",
+        author_name=config.GIT_AUTHOR_NAME,
+        author_email=config.GIT_AUTHOR_EMAIL,
     )
-    if not ok_push:
-        return False, push_out
-    return True, "Pushed to ai-todos."

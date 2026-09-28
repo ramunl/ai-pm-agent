@@ -55,7 +55,9 @@ def build_content(version_info: dict) -> dict:
     projects = []
     for name in todos_repo.list_projects():
         summary = todos_repo.todo_summary(name)
-        projects.append({"name": name, "open": len(summary["open"]), "done": summary["done"]})
+        projects.append(
+            {"name": name, "open": len(summary["open"]), "done": summary["done"]}
+        )
     todos = None
     if active:
         summary = todos_repo.todo_summary(active)
@@ -79,7 +81,9 @@ def write_json_atomic(path: Path, payload: dict) -> bool:
     """Temp file + rename, owner-only; log and return False on error."""
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.stem}-", suffix=".tmp")
+        fd, tmp = tempfile.mkstemp(
+            dir=path.parent, prefix=f".{path.stem}-", suffix=".tmp"
+        )
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 json.dump(payload, handle, ensure_ascii=False, indent=2)
@@ -99,12 +103,14 @@ class SnapshotPublisher:
     """Writes the snapshot on change and on heartbeat; never raises."""
 
     def __init__(self, path: Path, heartbeat: float = HEARTBEAT_SECONDS) -> None:
+        """Configure the destination and heartbeat interval in seconds."""
         self.path = Path(path)
         self.heartbeat = heartbeat
         self._last_content: dict | None = None
         self._last_written = 0.0
 
     def publish(self, content: dict, now: float | None = None) -> bool:
+        """Write changed or overdue content and report whether it was saved."""
         current = time.time() if now is None else now
         changed = content != self._last_content
         due = current - self._last_written >= self.heartbeat

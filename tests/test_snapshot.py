@@ -14,7 +14,12 @@ from unittest.mock import AsyncMock, patch
 os.environ.setdefault("PM_TELEGRAM_BOT_TOKEN", "123456:test-token")
 os.environ.setdefault("YOUR_CHAT_ID", "123456")
 
-_ENV_KEYS = ("TODOS_REPO_PATH", "RULES_REPO_PATH", "TODOS_STATE_FILE", "PM_SNAPSHOT_FILE")
+_ENV_KEYS = (
+    "TODOS_REPO_PATH",
+    "RULES_REPO_PATH",
+    "TODOS_STATE_FILE",
+    "PM_SNAPSHOT_FILE",
+)
 VERSIONS = {"version": "ai-pm-agent v1", "core": "core: v1.1"}
 
 
@@ -53,19 +58,28 @@ class SnapshotTestCase(unittest.TestCase):
 
 class SummaryTests(SnapshotTestCase):
     def test_todo_summary(self) -> None:
-        self._todo_file("channel-cast", "# t\n\n- [ ] fix proxy\n- [x] add genre filter\n- [ ] release apk\n")
+        self._todo_file(
+            "channel-cast",
+            "# t\n\n- [ ] fix proxy\n- [x] add genre filter\n- [ ] release apk\n",
+        )
         self.assertEqual(
             self.todos.todo_summary("channel-cast"),
             {"open": ["fix proxy", "release apk"], "done": 1},
         )
 
     def test_todo_summary_without_list(self) -> None:
-        self.assertEqual(self.todos.todo_summary("nothing-here"), {"open": [], "done": 0})
+        self.assertEqual(
+            self.todos.todo_summary("nothing-here"), {"open": [], "done": 0}
+        )
 
     def test_rule_counts_skip_readme(self) -> None:
         (self.rules_dir / "README.md").write_text("- not a rule\n")
-        (self.rules_dir / "global" / "kotlin.md").write_text("# Kotlin\n- a\n- b\n- c\n")
-        self.assertEqual(self.rules.rule_counts(), [{"file": "global/kotlin.md", "count": 3}])
+        (self.rules_dir / "global" / "kotlin.md").write_text(
+            "# Kotlin\n- a\n- b\n- c\n"
+        )
+        self.assertEqual(
+            self.rules.rule_counts(), [{"file": "global/kotlin.md", "count": 3}]
+        )
 
 
 class ContentTests(SnapshotTestCase):
@@ -81,7 +95,12 @@ class ContentTests(SnapshotTestCase):
         self.assertEqual(content["active_project"], "channel-cast")
         self.assertEqual(
             content["todos"],
-            {"project": "channel-cast", "open": ["fix proxy"], "open_count": 1, "done": 1},
+            {
+                "project": "channel-cast",
+                "open": ["fix proxy"],
+                "open_count": 1,
+                "done": 1,
+            },
         )
         self.assertEqual(
             content["projects"],
@@ -115,7 +134,9 @@ class PublisherTests(SnapshotTestCase):
         self.assertTrue(publisher.publish(content, now=1000.0))
         self.assertFalse(publisher.publish(dict(content), now=1010.0))
         self.assertTrue(publisher.publish(dict(content), now=1031.0))
-        self.assertTrue(publisher.publish({**content, "active_project": "x"}, now=1032.0))
+        self.assertTrue(
+            publisher.publish({**content, "active_project": "x"}, now=1032.0)
+        )
         saved = json.loads(path.read_text())
         self.assertEqual((saved["updated_at"], saved["active_project"]), (1032.0, "x"))
         self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
@@ -132,10 +153,13 @@ class PublisherTests(SnapshotTestCase):
             return real(version_info)
 
         async def run() -> None:
-            with patch.object(self.snapshot, "versions", return_value=VERSIONS), patch.object(
-                self.snapshot, "build_content", side_effect=flaky
+            with (
+                patch.object(self.snapshot, "versions", return_value=VERSIONS),
+                patch.object(self.snapshot, "build_content", side_effect=flaky),
             ):
-                task = asyncio.create_task(self.snapshot.publish_forever(path, interval=0.01))
+                task = asyncio.create_task(
+                    self.snapshot.publish_forever(path, interval=0.01)
+                )
                 for _ in range(200):
                     if path.exists():
                         break
@@ -150,7 +174,9 @@ class PublisherTests(SnapshotTestCase):
 
 
 class LifecycleTests(unittest.IsolatedAsyncioTestCase):
-    async def test_startup_registers_hints_and_starts_publisher_shutdown_stops_it(self) -> None:
+    async def test_startup_registers_hints_and_starts_publisher_shutdown_stops_it(
+        self,
+    ) -> None:
         from ai_pm_agent import snapshot, telegram_bot
 
         started = asyncio.Event()

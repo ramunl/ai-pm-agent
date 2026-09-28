@@ -1,39 +1,36 @@
-# CLAUDE.md
+# Repository guidance
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This project is the PM agent for the coding-agent ecosystem. It owns edits to
+coding rules in `ai-rules` and per-project TODO lists in `ai-todos`.
 
-## What this is
+## Run and validate
 
-A Telegram bot that is the **sole writer** of the [ai-rules](https://github.com/ramunl/ai-rules) repo — a separate git repo of markdown coding rules. The bot lets an authorized user add/list/remove rules from Telegram; every mutation is committed and pushed to GitHub automatically. It is part of a multi-agent ecosystem (coding agent reads the rules, ops agent watches the server); those other agents are separate repos and share nothing with this one except the ai-rules working copy.
+- Run the bot: `python -m ai_pm_agent`.
+- Install development dependencies: `python -m pip install -r requirements-dev.txt`.
+- Format before committing: `ruff format ai_pm_agent tests`.
+- Validate: `ruff check ai_pm_agent tests`, `ruff format --check ai_pm_agent tests`,
+  and `python -m pytest -q`. Annotation and docstring checks are part of Ruff.
+- Tests use dummy credentials and temporary repositories; do not start the live
+  bot to validate a code change.
 
-Code review against rules is intentionally **not** implemented yet — see README.
+## Configuration
 
-## Running & ops
+`PM_TELEGRAM_BOT_TOKEN` and `YOUR_CHAT_ID` are required when importing app config.
+Optional settings include repository paths/remotes, commit identity, and
+`TODOS_STATE_FILE`. Production runs as `ai-pm-agent.service` with its configured
+environment file.
 
-```bash
-python -m ai_pm_agent          # run the bot (long-polling)
-pip install -r requirements.txt
-```
+## Architecture and conventions
 
-Deployed as a systemd service (`ai-pm-agent.service`) running `/opt/ai_pm_venv/bin/python -m ai_pm_agent`, with secrets in `/etc/ai-pm-agent.env`. There is **no test suite, linter config, or git repo** here — `python -m ai_pm_agent` is the only way to exercise the code, and it requires the env vars below to be set or it raises `KeyError` at import time.
+Follow `ai-rules/global/python.md` and [the module map](docs/architecture.md).
+Dependency flow is Telegram adapters → markdown repositories → shared Git service
+→ shell execution. Configuration is a leaf dependency.
 
-## Required environment
-
-Set before running (see `ai_pm_agent/config.py`): `PM_TELEGRAM_BOT_TOKEN` and `YOUR_CHAT_ID` are mandatory. Optional: `RULES_REPO_PATH` (default `/opt/ai-rules`), `RULES_REPO_URL`, `PM_GIT_NAME`, `PM_GIT_EMAIL`.
-
-## Architecture (3 layers, strict one-way dependency)
-
-`telegram_bot.py` → `rules_repo.py` → `shell.py`. Config is a leaf imported by all.
-
-- **`telegram_bot.py`** — command handlers + the one authorization gate. Every handler starts with `if is_authorized(update)` (chat_id must equal `AUTHORIZED_CHAT_ID`); unauthorized messages are silently dropped and logged. Most handlers call `rules_repo.ensure_repo()` first to sync, then mutate, then `commit_and_push()`.
-- **`rules_repo.py`** — all rules logic and the only git-writing code. A **rule file** is any `*.md` in the repo (except top-level READMEs); a **rule** is a markdown bullet (`- ...`) line within it. Files are addressed by stem name (`kotlin` → `global/kotlin.md`) via `_resolve_file`, and rules by 1-based index over `_bullet_lines`. New files from `/addrule` are created under `global/`.
-- **`shell.py`** — the **only** place subprocesses run. `run()` takes an argument **list** (never `shell=True`) and returns `(ok, output)`. All git operations flow through it.
-
-The `(ok: bool, output: str)` tuple is the convention threaded through `rules_repo` and `shell` back up to the bot.
-
-## Conventions to follow when editing
-
-- Never introduce `shell=True` or string-built commands — route every external process through `shell.run([...])` with a fixed argument list. This is the core security property (no free-form shell exec).
-- Keep the authorization check at the top of every new command handler.
-- The codebase favors named boolean locals (`is_new_file`, `hasSeparator`, `nothing_to_commit`) describing a condition before branching on it — match that style rather than inlining complex conditionals.
-- Rules-repo git is **main-only**: pulls are `--ff-only origin main`, pushes go to `origin main`.
+- Keep the owner authorization guard at the beginning of command handlers.
+- Validate arguments and stop on failed synchronization before editing files.
+- External commands go through `shell.run()` with argument lists, never
+  `shell=True` or user-built command strings.
+- Rules and TODO Git operations pull `--ff-only origin main` and push `origin main`.
+- Check and report failures at every publication step.
+- Preserve the independent PM active-project state and open-item TODO numbering.
+- Update relevant markdown documentation with behavior or architecture changes.

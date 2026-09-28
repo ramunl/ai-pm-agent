@@ -1,13 +1,14 @@
 """Focused tests for Telegram bot command registration."""
 
 import os
-from types import SimpleNamespace
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 os.environ.setdefault("PM_TELEGRAM_BOT_TOKEN", "123456:test-token")
 os.environ.setdefault("YOUR_CHAT_ID", "123456")
 
+from ai_pm_agent import config
 from ai_pm_agent.telegram_bot import (
     BOT_COMMANDS,
     build_application,
@@ -59,16 +60,21 @@ class RegisterCommandsTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_version_uses_shared_runtime_report(self) -> None:
-        message = SimpleNamespace(chat_id=123456, reply_text=AsyncMock())
+        message = SimpleNamespace(
+            chat_id=config.AUTHORIZED_CHAT_ID, reply_text=AsyncMock()
+        )
         update = SimpleNamespace(message=message, effective_chat=None)
         context = SimpleNamespace()
 
-        with patch(
-            "ai_pm_agent.telegram_bot.get_runtime_version",
-            return_value="ai-pm-agent v1\nbranch: main\ncommit: abc123",
-        ) as runtime_version, patch(
-            "ai_pm_agent.telegram_bot._CORE_COMMAND.short_line",
-            return_value="core: v1.1",
+        with (
+            patch(
+                "ai_pm_agent.bot.help.get_runtime_version",
+                return_value="ai-pm-agent v1\nbranch: main\ncommit: abc123",
+            ) as runtime_version,
+            patch(
+                "ai_pm_agent.bot.help._CORE_COMMAND.short_line",
+                return_value="core: v1.1",
+            ),
         ):
             await version(update, context)
 
