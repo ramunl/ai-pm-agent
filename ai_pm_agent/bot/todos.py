@@ -8,6 +8,7 @@ from telegram.ext import ContextTypes
 from ai_pm_agent import todos_repo
 from ai_pm_agent.bot.repository_actions import publish_mutation, require_repository
 from ai_pm_agent.bot.transport import is_authorized, reply
+from ai_pm_agent.task_lock import serialized
 
 
 async def _require_active_project(update: Update) -> str | None:
@@ -23,6 +24,7 @@ async def _require_active_project(update: Update) -> str | None:
     return None
 
 
+@serialized
 async def todo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show the active TODO project, independently of the coding agent."""
     if not is_authorized(update):
@@ -36,6 +38,7 @@ async def todo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await reply(update, text)
 
 
+@serialized
 async def todo_use(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Persist the PM agent's selected TODO project."""
     if not is_authorized(update):
@@ -44,7 +47,11 @@ async def todo_use(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await reply(update, "Usage: /todo_use <project>")
         return
     project = context.args[0]
-    todos_repo.set_active_project(project)
+    try:
+        todos_repo.set_active_project(project)
+    except ValueError as error:
+        await reply(update, str(error))
+        return
     await reply(
         update,
         f"📌 Active todo project is now: {project}\n"
@@ -52,6 +59,7 @@ async def todo_use(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+@serialized
 async def todo_projects(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """List projects with TODO files and mark the active selection."""
     if not is_authorized(update):
@@ -72,6 +80,7 @@ async def todo_projects(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await reply(update, "\n".join(lines))
 
 
+@serialized
 async def todo_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show the active project's open TODO items after synchronization."""
     if not is_authorized(update):
@@ -83,6 +92,7 @@ async def todo_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await reply(update, f"📋 {project} todos:\n{body}")
 
 
+@serialized
 async def todo_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Add and publish an item in the active project's TODO list."""
     if not is_authorized(update):
@@ -103,6 +113,7 @@ async def todo_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+@serialized
 async def todo_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Mark a numbered open TODO done and publish the change."""
     if not is_authorized(update):

@@ -1,0 +1,8 @@
+#!/bin/sh
+# Installed bridge uses the PM service's trusted configuration and Python runtime.
+set -eu
+set -a
+. /etc/ai-pm-agent.env
+set +a
+cd /opt/ai-pm-agent
+exec /opt/ai_pm_venv/bin/python -m ai_pm_agent.task_cli

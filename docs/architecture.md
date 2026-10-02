@@ -55,3 +55,18 @@ active-project state, open-item numbering, and reply truncation.
 
 Git publication is tested with mocked command results. Markdown tests use
 temporary repositories and do not push to the live rules or TODO remotes.
+
+## Interactive Todos workspace
+
+`task_model.py` owns stable task metadata, Markdown compatibility, project path
+validation, atomic writes and revision conflict checks. `task_service.py` exposes
+transport-neutral workspace and mutation operations. `task_cli.py` is the local
+JSON bridge used by ai-dashboard through the installed `deploy/ai-pm-todos`
+wrapper. `task_lock.py` serializes CLI transactions and Telegram TODO handlers
+across processes. Bot adapters retain open-item numbering for compatibility;
+web requests use explicit project, stable ID and content revision.
+
+The snapshot remains the read-only availability fallback. Live editing reads the
+bridge for complete items, including done tasks. Rules editing remains in its
+existing bot commands; a Rules UI is a later phase. Task claiming, execution and
+completion evidence are future worker features.
