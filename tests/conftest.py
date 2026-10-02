@@ -20,3 +20,12 @@ def chat():
             reply_text=AsyncMock(),
         )
     )
+
+
+@pytest.fixture(autouse=True)
+def isolated_pm_state(tmp_path, monkeypatch):
+    """Keep command transactions and state writes in temporary storage."""
+    from ai_pm_agent import config
+
+    monkeypatch.setattr(config, "TODOS_STATE_FILE", str(tmp_path / "active.txt"))
+    monkeypatch.setattr(config, "TODOS_REPO_PATH", str(tmp_path / "todos"))

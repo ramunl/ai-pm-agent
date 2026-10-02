@@ -13,6 +13,7 @@ from ai_pm_agent import config
 from ai_pm_agent.bot.catalog import BOT_COMMANDS
 from ai_pm_agent.bot.help import core, start, version
 from ai_pm_agent.bot.rules import addrule, files, removerule, rules, sync
+from ai_pm_agent.bot.task_edits import edit_task, todo_done_list
 from ai_pm_agent.bot.todos import (
     todo,
     todo_add,
@@ -84,4 +85,13 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("todo_add", todo_add))
     app.add_handler(CommandHandler("todo_done", todo_done))
     app.add_handler(CommandHandler("todo_projects", todo_projects))
+    for name in (
+        "todo_edit",
+        "todo_remove",
+        "todo_priority",
+        "todo_status",
+        "todo_reopen",
+    ):
+        app.add_handler(CommandHandler(name, edit_task))
+    app.add_handler(CommandHandler("todo_completed", todo_done_list))
     return app

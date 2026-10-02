@@ -170,3 +170,50 @@ Commands now stop before editing if repository synchronization fails. A failed
 Git configuration, staging, commit, or push is reported as a failure; a failed
 push no longer receives a success checkmark. Successful command syntax and
 markdown numbering are unchanged.
+
+## Todos workspace and dashboard editing
+
+The dashboard Todos workspace supports project selection/creation, adding,
+editing, confirmed deletion, priorities (`high`, `normal`, `low`) and statuses
+(`open`, `in_progress`, `blocked`, `done`). “Open” lists include all unfinished
+items; completed items can be reopened. The PM project remains independent of
+coding-agent repository selection.
+
+Additional Telegram commands use the same structured task operations:
+
+| Command | Action |
+|---|---|
+| `/todo_edit <open number> \| <text>` | Edit an item |
+| `/todo_remove <open number>` | Delete an item |
+| `/todo_priority <open number> <high\|normal\|low>` | Set priority |
+| `/todo_status <open number> <open\|in_progress\|blocked\|done>` | Set status |
+| `/todo_completed` | List completed text and stable IDs |
+| `/todo_reopen <id>` | Reopen a completed item |
+
+Task text remains one Markdown checkbox line. The dashboard folds entered line
+breaks into spaces. Machine metadata lives in trailing `<!-- pm-task:{...} -->`
+comments: ID, status and priority. Existing plain checkboxes default to Normal
+priority. Their IDs become persistent on the first edit to that project; all
+other paragraphs and completed history are preserved. IDs are distinct even
+when two tasks have identical text. Bot lists hide the metadata.
+
+The local JSON bridge is owned by this repository. The dashboard sends a fixed
+operation as JSON on stdin; it never edits TODO Markdown directly. All Telegram
+TODO operations and bridge transactions share a filesystem lock. Mutation
+requests include project, task ID and a content revision, so a stale screen
+cannot edit a different task. Add requests reuse their ID when retrying.
+
+A failed pull stops edits. A failed push reports “saved locally” and returns the
+updated workspace; **Sync todos** pulls and retries publishing existing commits.
+Do not resubmit a task under a new ID following an uncertain response.
+
+Install the bridge once after deploying this repository:
+
+```bash
+sudo install -m 755 /opt/ai-pm-agent/deploy/ai-pm-todos /usr/local/sbin/ai-pm-todos
+```
+
+The wrapper uses `/etc/ai-pm-agent.env` and `/opt/ai_pm_venv`, matching the PM
+service. Keep the environment file owner-only. Task IDs, statuses, and the
+transport-neutral `task_service.execute()` are foundations for a future worker;
+this release does not claim or execute tasks automatically.

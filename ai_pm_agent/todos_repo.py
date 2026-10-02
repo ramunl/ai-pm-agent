@@ -15,7 +15,8 @@ coupled, so selecting a project here never affects code changes there.
 import logging
 from pathlib import Path
 
-from ai_pm_agent import config, git_repo
+from ai_pm_agent import config, git_repo, task_model
+from ai_pm_agent.shell import run
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +41,9 @@ def active_project() -> str | None:
 
 def set_active_project(name: str) -> None:
     """Persist the PM-owned active TODO project on disk."""
+    task_model.project_path(Path(config.TODOS_REPO_PATH), name)
     state = Path(config.TODOS_STATE_FILE)
-    state.parent.mkdir(parents=True, exist_ok=True)
-    state.write_text(name.strip() + "\n", encoding="utf-8")
+    task_model.atomic_write(state, name + "\n")
     logger.info("Active todo project set to %s", name)
 
 
@@ -59,7 +60,7 @@ def list_projects() -> list[str]:
 
 
 def _todo_path(project: str) -> Path:
-    return Path(config.TODOS_REPO_PATH) / "projects" / project / "todo.md"
+    return task_model.project_path(Path(config.TODOS_REPO_PATH), project)
 
 
 def _checkbox_lines(text: str, done: bool) -> list[int]:
@@ -75,7 +76,8 @@ def _checkbox_lines(text: str, done: bool) -> list[int]:
 
 def _item_text(line: str) -> str:
     stripped = line.lstrip()
-    return stripped[len("- [ ] ") :].strip()
+    text = stripped[len("- [ ] ") :].strip()
+    return task_model.META.sub("", text).rstrip()
 
 
 def todo_summary(project: str) -> dict:
@@ -99,16 +101,25 @@ def numbered_todos(project: str) -> tuple[bool, str]:
         return True, "(no todo list yet — add one with /todo_add)"
 
     content = path.read_text(encoding="utf-8")
-    lines = content.splitlines()
     open_lines = _checkbox_lines(content, done=False)
     done_lines = _checkbox_lines(content, done=True)
 
     has_open = len(open_lines) > 0
     if has_open:
-        numbered = [
-            f"{number}. {_item_text(lines[line_index])}"
-            for number, line_index in enumerate(open_lines, start=1)
+        items = [
+            item
+            for item in task_model.parse_items(content, project)
+            if item["status"] != "done"
         ]
+        numbered = []
+        for number, item in enumerate(items, start=1):
+            labels = []
+            if item["priority"] != "normal":
+                labels.append(item["priority"])
+            if item["status"] != "open":
+                labels.append(item["status"].replace("_", " "))
+            suffix = f" [{' · '.join(labels)}]" if labels else ""
+            numbered.append(f"{number}. {item['text']}{suffix}")
         body = "\n".join(numbered)
     else:
         body = "(nothing open — all clear)"
@@ -119,40 +130,40 @@ def numbered_todos(project: str) -> tuple[bool, str]:
 
 def add_todo(project: str, text: str) -> tuple[bool, str]:
     """Append an open TODO item, creating the list if needed."""
-    path = _todo_path(project)
-    is_new = not path.is_file()
-    if is_new:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(f"# {project} — TODO\n\n", encoding="utf-8")
-        logger.info("Created todo list: %s", path)
-
-    existing = path.read_text(encoding="utf-8")
-    needs_newline = existing and not existing.endswith("\n")
-    separator = "\n" if needs_newline else ""
-    path.write_text(existing + separator + f"- [ ] {text}\n", encoding="utf-8")
+    try:
+        data = task_model.load(Path(config.TODOS_REPO_PATH), project)
+        task_model.mutate(
+            Path(config.TODOS_REPO_PATH),
+            project,
+            "add",
+            {
+                "revision": data["revision"],
+                "text": text,
+            },
+        )
+    except ValueError as error:
+        return False, str(error)
     return True, f"Added to {project}"
 
 
 def complete_todo(project: str, number: int) -> tuple[bool, str]:
     """Mark the Nth OPEN item (1-based) as done."""
-    path = _todo_path(project)
-    exists = path.is_file()
-    if not exists:
-        return False, f"No todo list for '{project}'."
-
-    content = path.read_text(encoding="utf-8")
-    lines = content.splitlines()
-    open_lines = _checkbox_lines(content, done=False)
-    in_range = 1 <= number <= len(open_lines)
-    if in_range:
-        target = open_lines[number - 1]
-        done_text = _item_text(lines[target])
-        indent = lines[target][: len(lines[target]) - len(lines[target].lstrip())]
-        lines[target] = f"{indent}- [x] {done_text}"
-        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        return True, f"Done: {done_text}"
-    logger.info("Todo #%s out of range for %s", number, project)
-    return False, f"No open item #{number} in '{project}'."
+    data = task_model.load(Path(config.TODOS_REPO_PATH), project)
+    items = [item for item in data["items"] if item["status"] != "done"]
+    if not 1 <= number <= len(items):
+        return False, f"No open item #{number} in '{project}'."
+    item = items[number - 1]
+    task_model.mutate(
+        Path(config.TODOS_REPO_PATH),
+        project,
+        "update",
+        {
+            "revision": data["revision"],
+            "id": item["id"],
+            "status": "done",
+        },
+    )
+    return True, f"Done: {item['text']}"
 
 
 def commit_and_push(message: str) -> tuple[bool, str]:
@@ -169,3 +180,8 @@ def _repository() -> git_repo.RepositoryConfig:
         author_name=config.GIT_AUTHOR_NAME,
         author_email=config.GIT_AUTHOR_EMAIL,
     )
+
+
+def retry_publish() -> tuple[bool, str]:
+    """Push existing commits after a previous publication failure, without editing."""
+    return run(["git", "push", "origin", "main"], cwd=config.TODOS_REPO_PATH)

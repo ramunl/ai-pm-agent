@@ -16,6 +16,12 @@ COMMANDS = build_command_list(
         Command("todo_list", "Show todos for the active project"),
         Command("todo_add", "Add a todo to the active project"),
         Command("todo_done", "Mark a todo done by number"),
+        Command("todo_edit", "Edit an open todo: number | text"),
+        Command("todo_remove", "Remove an open todo by number"),
+        Command("todo_priority", "Set priority: number high|normal|low"),
+        Command("todo_status", "Set status: number open|in_progress|blocked|done"),
+        Command("todo_completed", "Show completed todos and IDs"),
+        Command("todo_reopen", "Reopen a completed todo by ID"),
         Command("todo_projects", "List projects that have todo lists"),
     ]
 )
