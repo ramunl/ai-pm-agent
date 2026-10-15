@@ -28,7 +28,8 @@ immutable `RepositoryConfig` from current settings and delegate Git operations.
 
 Shared-core authorization and command catalogs remain in use. Application startup
 registers commands and starts the snapshot publisher; shutdown cancels and awaits
-the publisher. The dashboard snapshot format and file permissions are unchanged.
+the publisher. The dashboard snapshot format number and file permissions are
+unchanged; todo items gained additive sort fields (see below).
 
 ## Edit and publication flow
 
@@ -65,6 +66,40 @@ JSON bridge used by ai-dashboard through the installed `deploy/ai-pm-todos`
 wrapper. `task_lock.py` serializes CLI transactions and Telegram TODO handlers
 across processes. Bot adapters retain open-item numbering for compatibility;
 web requests use explicit project, stable ID and content revision.
+
+### todo.md metadata
+
+Machine metadata lives in one trailing comment per item, edited only through
+`task_model`:
+
+```markdown
+- [ ] Ship the release <!-- pm-task:{"id":"<32 hex>","status":"open","priority":"high","created":"2026-10-15"} -->
+```
+
+- `priority` is `high`, `normal` or `low`; plain checkbox lines read as `normal`.
+- `created` is the UTC `YYYY-MM-DD` date when the item was added. Only `add`
+  stamps it. Edits, status changes, deletions of other items and manual line
+  reordering keep it. Items written earlier have no `created` key and parse as
+  `None`. Dates are never backfilled, and rewrites leave the key out, so those
+  lines stay byte-identical.
+- Telegram replies, the snapshot `text`/`open` fields and the bridge `text`
+  field never include the comment. The bridge returns `created` and `priority`
+  as separate item fields.
+
+### Snapshot todo fields
+
+`todos.open` (a list of text strings) is kept for older dashboards. `todos.items`
+lists the same open items, capped at `MAX_OPEN_ITEMS` like `open`. Each item has:
+
+| Field | Value |
+| --- | --- |
+| `index` | 1-based position among open items in file order (the `/todo_done` number) |
+| `text` | Item text without metadata |
+| `created` | ISO date string, or `null` for older items (sort these last) |
+| `priority` | `high`, `normal` or `low` (stored value, default `normal`) |
+
+The field names are the contract with ai-dashboard browser-side sorting. The
+snapshot `format` stays `1` because the change only adds fields.
 
 The snapshot remains the read-only availability fallback. Live editing reads the
 bridge for complete items, including done tasks. Rules editing remains in its
