@@ -6,6 +6,7 @@ import os
 import re
 import tempfile
 import uuid
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 STATUSES = ("open", "in_progress", "blocked", "done")
@@ -33,13 +34,35 @@ def project_path(root: Path, project: str) -> Path:
     return path
 
 
+def today() -> date:
+    """Return the current UTC date stamped on newly added tasks."""
+    return datetime.now(UTC).date()
+
+
+def _created(value: object) -> str | None:
+    """Validate an optional ``YYYY-MM-DD`` creation date from task metadata."""
+    if value is None:
+        return None
+    if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        raise ValueError("Invalid task creation date")
+    try:
+        return date.fromisoformat(value).isoformat()
+    except ValueError:
+        raise ValueError("Invalid task creation date") from None
+
+
 def revision(content: str) -> str:
     """Return a revision token for conflict detection, including empty lists."""
     return hashlib.sha256(content.encode()).hexdigest()
 
 
 def parse_items(content: str, project: str) -> list[dict]:
-    """Read both plain checkbox lines and structured tasks without changing files."""
+    """Read both plain checkbox lines and structured tasks without changing files.
+
+    Each item has ``created`` as an ISO date string, or None for tasks written
+    before creation dates were recorded, and ``priority`` from the metadata
+    (plain checkbox lines default to ``normal``).
+    """
     items = []
     ids = set()
     for index, line in enumerate(content.splitlines()):
@@ -71,6 +94,7 @@ def parse_items(content: str, project: str) -> list[dict]:
             raise ValueError("Invalid or duplicate task ID")
         if status not in STATUSES or priority not in PRIORITIES:
             raise ValueError("Invalid task status or priority")
+        created = _created(metadata.get("created"))
         ids.add(item_id)
         items.append(
             {
@@ -78,6 +102,7 @@ def parse_items(content: str, project: str) -> list[dict]:
                 "text": text,
                 "status": status,
                 "priority": priority,
+                "created": created,
                 "line": index,
                 "indent": indent,
             }
@@ -115,6 +140,9 @@ def atomic_write(path: Path, content: str) -> None:
 
 def _render(item: dict) -> str:
     metadata = {key: item[key] for key in ("id", "status", "priority")}
+    # Older tasks have no date; omitting the key keeps their lines byte-identical.
+    if item.get("created") is not None:
+        metadata["created"] = item["created"]
     marker = "x" if item["status"] == "done" else " "
     encoded = json.dumps(metadata, separators=(",", ":"))
     prefix = f"{item.get('indent', '')}- [{marker}] {item['text']}"
@@ -171,6 +199,7 @@ def mutate(root: Path, project: str, action: str, data: dict) -> dict:
             "text": data["text"].strip(),
             "status": data.get("status", "open"),
             "priority": data.get("priority", "normal"),
+            "created": today().isoformat(),
         }
     elif target is None:
         raise TaskConflictError("This todo no longer exists. Refresh the list.")

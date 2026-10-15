@@ -46,3 +46,21 @@ def test_completed_todo_reports_failed_push(chat, monkeypatch):
     assert (
         chat.message.reply_text.await_args.args[0] == "⚠️ Done: add tests\npush rejected"
     )
+
+
+def test_todo_add_stamps_date_and_list_hides_metadata(chat, monkeypatch):
+    from datetime import date
+    from pathlib import Path
+
+    from ai_pm_agent import config, task_model
+
+    monkeypatch.setattr(todos_repo, "active_project", lambda: "alpha")
+    monkeypatch.setattr(todos_repo, "ensure_repo", lambda: (True, ""))
+    monkeypatch.setattr(todos_repo, "commit_and_push", lambda message: (True, ""))
+    monkeypatch.setattr(task_model, "today", lambda: date(2026, 10, 15))
+    asyncio.run(todos.todo_add(chat, SimpleNamespace(args=["write", "docs"])))
+    path = Path(config.TODOS_REPO_PATH) / "projects" / "alpha" / "todo.md"
+    assert '"created":"2026-10-15"' in path.read_text()
+    asyncio.run(todos.todo_list(chat, SimpleNamespace(args=[])))
+    listing = chat.message.reply_text.await_args.args[0]
+    assert listing == "📋 alpha todos:\n1. write docs"

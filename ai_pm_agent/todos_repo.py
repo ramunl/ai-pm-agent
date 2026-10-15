@@ -7,6 +7,11 @@ Each TODO is a markdown checkbox line. Open items are "- [ ] text";
 done items are "- [x] text". Items are referenced by a 1-based index over
 the OPEN items in the active project's list.
 
+Edited items carry a trailing ``<!-- pm-task:{...} -->`` comment owned by
+task_model: id, status, priority (high|normal|low) and, for items added since
+creation dates were introduced, ``created`` as a UTC ``YYYY-MM-DD`` date. The
+comment is stripped from every text shown in Telegram or the dashboard.
+
 The active project is state owned by THIS agent, stored in a local file. It is
 deliberately independent of the coding agent's active project — the two are not
 coupled, so selecting a project here never affects code changes there.
@@ -91,6 +96,28 @@ def todo_summary(project: str) -> dict:
         "open": [_item_text(lines[i]) for i in _checkbox_lines(content, done=False)],
         "done": len(_checkbox_lines(content, done=True)),
     }
+
+
+def open_items(project: str) -> list[dict]:
+    """Open items in file order with their open-item number and sort metadata.
+
+    ``index`` is the 1-based /todo_done number, ``created`` an ISO date or None
+    for older items, and ``priority`` the stored or default priority.
+    """
+    path = _todo_path(project)
+    if not path.is_file():
+        return []
+    items = task_model.parse_items(path.read_text(encoding="utf-8"), project)
+    open_only = [item for item in items if item["status"] != "done"]
+    return [
+        {
+            "index": number,
+            "text": item["text"],
+            "created": item["created"],
+            "priority": item["priority"],
+        }
+        for number, item in enumerate(open_only, start=1)
+    ]
 
 
 def numbered_todos(project: str) -> tuple[bool, str]:

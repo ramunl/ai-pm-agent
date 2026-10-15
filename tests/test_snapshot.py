@@ -98,6 +98,14 @@ class ContentTests(SnapshotTestCase):
             {
                 "project": "channel-cast",
                 "open": ["fix proxy"],
+                "items": [
+                    {
+                        "index": 1,
+                        "text": "fix proxy",
+                        "created": None,
+                        "priority": "normal",
+                    }
+                ],
                 "open_count": 1,
                 "done": 1,
             },
@@ -123,7 +131,44 @@ class ContentTests(SnapshotTestCase):
         self.todos.set_active_project("big")
         todos = self.snapshot.build_content(VERSIONS)["todos"]
         self.assertEqual(len(todos["open"]), self.snapshot.MAX_OPEN_ITEMS)
+        self.assertEqual(len(todos["items"]), self.snapshot.MAX_OPEN_ITEMS)
         self.assertEqual(todos["open_count"], 80)
+
+    def test_items_carry_index_created_and_priority(self) -> None:
+        self._todo_file(
+            "app",
+            "# app\n\n"
+            "- [ ] legacy\n"
+            f'- [x] gone <!-- pm-task:{{"id":"{"a" * 32}","status":"done",'
+            '"priority":"low","created":"2026-09-01"} -->\n'
+            f'- [ ] urgent <!-- pm-task:{{"id":"{"b" * 32}","status":"open",'
+            '"priority":"high","created":"2026-10-02"} -->\n'
+            f'- [ ] stuck <!-- pm-task:{{"id":"{"c" * 32}","status":"blocked",'
+            '"priority":"low"} -->\n',
+        )
+        self.todos.set_active_project("app")
+        todos = self.snapshot.build_content(VERSIONS)["todos"]
+        self.assertEqual(todos["open"], ["legacy", "urgent", "stuck"])
+        self.assertEqual(
+            todos["items"],
+            [
+                {"index": 1, "text": "legacy", "created": None, "priority": "normal"},
+                {
+                    "index": 2,
+                    "text": "urgent",
+                    "created": "2026-10-02",
+                    "priority": "high",
+                },
+                {"index": 3, "text": "stuck", "created": None, "priority": "low"},
+            ],
+        )
+        # Nulls survive the JSON file the dashboard reads.
+        path = self.tmp / "snapshot.json"
+        self.snapshot.SnapshotPublisher(path).publish(
+            self.snapshot.build_content(VERSIONS), now=1.0
+        )
+        saved = json.loads(path.read_text())["todos"]["items"][0]
+        self.assertIsNone(saved["created"])
 
 
 class PublisherTests(SnapshotTestCase):

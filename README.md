@@ -192,8 +192,9 @@ Additional Telegram commands use the same structured task operations:
 
 Task text remains one Markdown checkbox line. The dashboard folds entered line
 breaks into spaces. Machine metadata lives in trailing `<!-- pm-task:{...} -->`
-comments: ID, status and priority. Existing plain checkboxes default to Normal
-priority. Their IDs become persistent on the first edit to that project; all
+comments: ID, status, priority and, for items added from now on, a UTC `created`
+date. Existing plain checkboxes default to Normal priority and have no creation
+date. Their IDs become persistent on the first edit to that project; all
 other paragraphs and completed history are preserved. IDs are distinct even
 when two tasks have identical text. Bot lists hide the metadata.
 
