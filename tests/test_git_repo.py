@@ -4,7 +4,7 @@ from unittest.mock import Mock, call
 
 import pytest
 
-from ai_pm_agent import git_repo
+from ai_pm_agent import config, git_repo, rules_repo, todos_repo
 
 
 @pytest.fixture
@@ -52,14 +52,28 @@ def test_failed_git_step_stops_publication(repository, monkeypatch, failed_step)
     assert command.call_count == failed_step + 1
 
 
-def test_nothing_to_commit_does_not_push(repository, monkeypatch):
+@pytest.mark.parametrize(
+    "caller,label", [(rules_repo, "ai-rules"), (todos_repo, "ai-todos")]
+)
+@pytest.mark.parametrize("pushed", [True, False])
+def test_nothing_to_commit_returns_push_outcome(
+    tmp_path, monkeypatch, caller, label, pushed
+):
+    path = str(tmp_path / label)
+    monkeypatch.setattr(config, "RULES_REPO_PATH", path)
+    monkeypatch.setattr(config, "TODOS_REPO_PATH", path)
     command = Mock(
         side_effect=[(True, "")] * 3
         + [(False, "nothing to commit, working tree clean")]
+        + [(pushed, "push rejected" if not pushed else "Everything up-to-date")]
     )
     monkeypatch.setattr(git_repo, "run", command)
-    assert git_repo.commit_and_push(repository, "edit") == (True, "No changes to push.")
-    assert command.call_count == 4
+    assert caller.commit_and_push("edit") == (
+        pushed,
+        f"Pushed to {label}." if pushed else "push rejected",
+    )
+    assert command.call_count == 5
+    command.assert_called_with(["git", "push", "origin", "main"], cwd=path)
 
 
 def test_successful_publication_sets_identity_and_pushes_main(repository, monkeypatch):
