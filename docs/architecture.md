@@ -37,6 +37,13 @@ Handlers reject unauthorized messages first and validate arguments before doing
 repository work. A repository is synchronized before reading or editing it.
 Synchronization failure stops the operation before any markdown mutation.
 
+Telegram `/todo_done` and `/todo_list` reply with the repository's validation or
+revision-conflict error text and stop without publication or a success reply.
+Their `ValueError` handling covers only `complete_todo` and `numbered_todos`;
+repository errors remain available to other callers. Completion keeps revision
+protection, so a stale edit cannot overwrite newer TODO content. `/todo_add`
+continues to report repository validation failures through its failed result.
+
 After a successful local edit, the Git service configures the commit identity,
 stages changes, commits, and pushes `origin main`. Each Git failure stops the
 sequence. A clean tree reports that there are no changes to push. Publication

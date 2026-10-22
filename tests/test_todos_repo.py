@@ -80,6 +80,32 @@ class TodosRepoTest(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("No open item #5", msg)
 
+    def test_invalid_task_id_propagates_without_changing_content(self) -> None:
+        content = '- [ ] broken <!-- pm-task:{"id":"invalid"} -->\n'
+        self._write("app", content)
+        for operation, args in (
+            (self.todos.complete_todo, ("app", 1)),
+            (self.todos.numbered_todos, ("app",)),
+        ):
+            with self.subTest(operation=operation.__name__):
+                with self.assertRaisesRegex(ValueError, "Invalid or duplicate task ID"):
+                    operation(*args)
+                self.assertEqual(self._path("app").read_text(), content)
+
+    def test_complete_conflict_preserves_newer_content(self) -> None:
+        from unittest.mock import patch
+
+        from ai_pm_agent import task_model
+
+        self.todos.add_todo("app", "first")
+        stale = task_model.load(self.repo, "app")
+        self.todos.add_todo("app", "newer")
+        content = self._path("app").read_text()
+        with patch.object(task_model, "load", return_value=stale):
+            with self.assertRaisesRegex(task_model.TaskConflictError, "list changed"):
+                self.todos.complete_todo("app", 1)
+        self.assertEqual(self._path("app").read_text(), content)
+
     def test_list_projects_reflects_created_lists(self) -> None:
         self.todos.add_todo("alpha", "x")
         self.todos.add_todo("beta", "y")

@@ -121,7 +121,7 @@ def open_items(project: str) -> list[dict]:
 
 
 def numbered_todos(project: str) -> tuple[bool, str]:
-    """Open items numbered, followed by a count of done items."""
+    """Number open items and count done items; propagate validation errors."""
     path = _todo_path(project)
     exists = path.is_file()
     if not exists:
@@ -174,7 +174,11 @@ def add_todo(project: str, text: str) -> tuple[bool, str]:
 
 
 def complete_todo(project: str, number: int) -> tuple[bool, str]:
-    """Mark the Nth OPEN item (1-based) as done."""
+    """Mark the Nth OPEN item (1-based) as done.
+
+    Validation and revision-conflict errors propagate to the caller without
+    writing changes. An out-of-range number returns a failed result instead.
+    """
     data = task_model.load(Path(config.TODOS_REPO_PATH), project)
     items = [item for item in data["items"] if item["status"] != "done"]
     if not 1 <= number <= len(items):
