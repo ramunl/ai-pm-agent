@@ -117,3 +117,41 @@ def test_failed_rule_removal_is_not_published(chat, monkeypatch):
     asyncio.run(rules.removerule(chat, SimpleNamespace(args=["python", "9"])))
     publish.assert_not_called()
     assert "⚠️ No rule #9" in chat.message.reply_text.await_args.args[0]
+
+
+def test_rule_sync_remains_serialized_through_cancellation(chat, monkeypatch):
+    import threading
+
+    async def scenario():
+        started = asyncio.Event()
+        release = threading.Event()
+        loop = asyncio.get_running_loop()
+        calls = []
+
+        def synchronize():
+            calls.append("sync")
+            loop.call_soon_threadsafe(started.set)
+            assert release.wait(3)
+            return True, "synced"
+
+        monkeypatch.setattr(rules_repo, "ensure_repo", synchronize)
+        first = asyncio.create_task(rules.sync(chat, SimpleNamespace(args=[])))
+        second = None
+        try:
+            await asyncio.wait_for(started.wait(), 1)
+            first.cancel()
+            second = asyncio.create_task(rules.sync(chat, SimpleNamespace(args=[])))
+            await asyncio.sleep(0.1)
+            assert calls == ["sync"]
+            assert not first.done()
+            assert not second.done()
+        finally:
+            release.set()
+            with pytest.raises(asyncio.CancelledError):
+                await first
+            if second is not None:
+                await asyncio.wait_for(second, 1)
+        assert calls == ["sync", "sync"]
+        chat.message.reply_text.assert_awaited_once_with("✅ Synced\nsynced")
+
+    asyncio.run(scenario())

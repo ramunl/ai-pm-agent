@@ -4,6 +4,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from ai_pm_agent import task_service, todos_repo
+from ai_pm_agent.bot.repository_actions import run_repository
 from ai_pm_agent.bot.transport import is_authorized, reply
 from ai_pm_agent.task_lock import serialized
 
@@ -23,11 +24,11 @@ async def edit_task(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         return
     try:
-        synced, message = todos_repo.ensure_repo()
+        synced, message = await run_repository(todos_repo.ensure_repo)
         if not synced:
             await reply(update, "TODO sync failed: " + message)
             return
-        state = task_service.workspace(project)
+        state = await run_repository(task_service.workspace, project)
         items = [item for item in state["items"] if item["status"] != "done"]
         selector = context.args[0]
         if command == "todo_reopen":
@@ -54,7 +55,7 @@ async def edit_task(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             payload["status"] = value
         elif command == "todo_reopen":
             payload["status"] = "open"
-        result = task_service.execute(payload)
+        result = await run_repository(task_service.execute, payload)
         await reply(
             update,
             result.get("error")
@@ -74,11 +75,12 @@ async def todo_done_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not project:
         await reply(update, "Select a project with /todo_use first.")
         return
-    synced, message = todos_repo.ensure_repo()
+    synced, message = await run_repository(todos_repo.ensure_repo)
     if not synced:
         await reply(update, "TODO sync failed: " + message)
         return
-    items = task_service.workspace(project)["items"]
+    state = await run_repository(task_service.workspace, project)
+    items = state["items"]
     lines = [
         f"{item['id']} · {item['text']}" for item in items if item["status"] == "done"
     ]

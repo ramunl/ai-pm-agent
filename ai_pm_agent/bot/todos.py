@@ -6,7 +6,11 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from ai_pm_agent import todos_repo
-from ai_pm_agent.bot.repository_actions import publish_mutation, require_repository
+from ai_pm_agent.bot.repository_actions import (
+    publish_mutation,
+    require_repository,
+    run_repository,
+)
 from ai_pm_agent.bot.transport import is_authorized, reply
 from ai_pm_agent.task_lock import serialized
 
@@ -112,7 +116,7 @@ async def todo_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     await publish_mutation(
         update,
-        todos_repo.add_todo(project, text),
+        partial(todos_repo.add_todo, project, text),
         partial(todos_repo.commit_and_push, f"todos: add to {project}"),
     )
 
@@ -132,12 +136,12 @@ async def todo_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     number = int(context.args[0])
     try:
-        result = todos_repo.complete_todo(project, number)
+        result = await run_repository(todos_repo.complete_todo, project, number)
     except ValueError as error:
         await reply(update, str(error))
         return
     await publish_mutation(
         update,
-        result,
+        lambda: result,
         partial(todos_repo.commit_and_push, f"todos: complete in {project}"),
     )

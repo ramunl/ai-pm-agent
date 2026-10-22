@@ -6,19 +6,26 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from ai_pm_agent import rules_repo
-from ai_pm_agent.bot.repository_actions import publish_mutation, require_repository
+from ai_pm_agent.bot.repository_actions import (
+    publish_mutation,
+    require_repository,
+    run_repository,
+)
 from ai_pm_agent.bot.transport import is_authorized, reply
+from ai_pm_agent.task_lock import serialized
 
 
+@serialized
 async def sync(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Pull the latest coding rules and report synchronization status."""
     if not is_authorized(update):
         return
-    ok, output = rules_repo.ensure_repo()
+    ok, output = await run_repository(rules_repo.ensure_repo)
     prefix = "✅ Synced" if ok else "⚠️ Sync problem"
     await reply(update, f"{prefix}\n{output}")
 
 
+@serialized
 async def files(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """List available coding-rule files after synchronizing the repository."""
     if not is_authorized(update):
@@ -34,6 +41,7 @@ async def files(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await reply(update, text)
 
 
+@serialized
 async def rules(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show the numbered rules in a selected file."""
     if not is_authorized(update):
@@ -49,6 +57,7 @@ async def rules(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await reply(update, header + body)
 
 
+@serialized
 async def addrule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Validate, add, and publish a rule in the selected file."""
     if not is_authorized(update):
@@ -70,11 +79,12 @@ async def addrule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     await publish_mutation(
         update,
-        rules_repo.add_rule(name, rule_text),
+        partial(rules_repo.add_rule, name, rule_text),
         partial(rules_repo.commit_and_push, f"rules: add to {name}"),
     )
 
 
+@serialized
 async def removerule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Remove a numbered rule and publish the resulting file."""
     if not is_authorized(update):
@@ -90,7 +100,7 @@ async def removerule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
     await publish_mutation(
         update,
-        rules_repo.remove_rule(name, int(number_text)),
+        partial(rules_repo.remove_rule, name, int(number_text)),
         partial(
             rules_repo.commit_and_push, f"rules: remove #{number_text} from {name}"
         ),
