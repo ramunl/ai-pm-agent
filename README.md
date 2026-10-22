@@ -218,3 +218,11 @@ The wrapper uses `/etc/ai-pm-agent.env` and `/opt/ai_pm_venv`, matching the PM
 service. Keep the environment file owner-only. Task IDs, statuses, and the
 transport-neutral `task_service.execute()` are foundations for a future worker;
 this release does not claim or execute tasks automatically.
+
+## Deployment webhook
+
+Pushes to `main` or a manual run of `Deploy AI PM Agent` call the HTTPS hook.
+Set GitHub Actions secrets `DEPLOY_WEBHOOK_URL` to
+`https://<deploy-host>/hooks/ai-pm-agent-update` and `DEPLOY_WEBHOOK_TOKEN` to
+the matching server token. The workflow sends the token as a bearer header;
+credentials in URLs, HTTP, redirects, and HTTP errors fail the job.
