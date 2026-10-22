@@ -1,6 +1,7 @@
 """Structured task compatibility, identity, conflicts and shared operations."""
 
 import asyncio
+import io
 import json
 import uuid
 from pathlib import Path
@@ -9,7 +10,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from ai_pm_agent import config, task_model, task_service, todos_repo
+from ai_pm_agent import config, task_cli, task_model, task_service, todos_repo
 from ai_pm_agent.bot.task_edits import edit_task
 
 
@@ -173,6 +174,137 @@ def test_project_selection_is_independent_state():
     result = task_service.execute({"action": "select", "project": "new-project"})
     assert todos_repo.active_project() == "new-project"
     assert result["workspace"]["items"] == []
+
+
+@pytest.fixture
+def bridge(monkeypatch, capsys):
+    def request(payload):
+        monkeypatch.setattr(task_cli.sys, "stdin", io.StringIO(json.dumps(payload)))
+        assert task_cli.main() == 0
+        return json.loads(capsys.readouterr().out)
+
+    return request
+
+
+@pytest.fixture(params=["duplicate", "invalid"])
+def malformed_project(request):
+    path = Path(config.TODOS_REPO_PATH) / "projects/a/todo.md"
+    path.parent.mkdir(parents=True)
+    first_id = "a" * 32
+    second_id = first_id if request.param == "duplicate" else "invalid"
+    path.write_text(
+        f'- [ ] first <!-- pm-task:{{"id":"{first_id}"}} -->\n'
+        f'- [X] second <!-- pm-task:{{"id":"{second_id}"}} -->\n'
+        "- [ ] legacy open\n- [x] legacy done\n"
+    )
+    return path
+
+
+def test_bridge_valid_project_ignores_malformed_summary(
+    malformed_project, bridge, monkeypatch
+):
+    original = malformed_project.read_bytes()
+    root = Path(config.TODOS_REPO_PATH)
+    path = root / "projects/b/todo.md"
+    path.parent.mkdir(parents=True)
+    path.write_text("- [ ] legacy open\n- [X] legacy done\n")
+    empty = root / "projects/empty/todo.md"
+    empty.parent.mkdir(parents=True)
+    empty.write_text("")
+    todos_repo.set_active_project("a")
+    monkeypatch.setattr(todos_repo, "ensure_repo", lambda: (True, ""))
+    publish = Mock(return_value=(True, ""))
+    monkeypatch.setattr(todos_repo, "commit_and_push", publish)
+
+    result = bridge({"action": "read", "project": "b"})
+    assert result["ok"] is True
+    state = result["workspace"]
+    assert state["active_project"] == "a"
+    assert state["projects"] == [
+        {"name": "a", "open": 2, "done": 2},
+        {"name": "b", "open": 1, "done": 1},
+        {"name": "empty", "open": 0, "done": 0},
+    ]
+    assert [item["status"] for item in state["items"]] == ["open", "done"]
+    stale_revision = state["revision"]
+    item_id = "b" * 32
+    for action, fields, counts in [
+        ("add", {"text": "new"}, (2, 1)),
+        ("update", {"text": "updated", "status": "done"}, (1, 2)),
+        ("delete", {}, (1, 1)),
+    ]:
+        result = bridge(
+            {
+                "action": action,
+                "project": "b",
+                "id": item_id,
+                "revision": state["revision"],
+                **fields,
+            }
+        )
+        assert result["ok"] is True
+        assert result["published"] is True
+        state = result["workspace"]
+        assert state["active_project"] == "a"
+        assert state["project"] == "b"
+        assert state["projects"][1] == {
+            "name": "b",
+            "open": counts[0],
+            "done": counts[1],
+        }
+        matching = [item for item in state["items"] if item["id"] == item_id]
+        if action == "delete":
+            assert matching == []
+        else:
+            assert matching[0]["text"] == fields["text"]
+
+    before = path.read_bytes()
+    result = bridge(
+        {
+            "action": "update",
+            "project": "b",
+            "id": state["items"][0]["id"],
+            "revision": stale_revision,
+            "status": "done",
+        }
+    )
+    assert result["ok"] is False
+    assert result["conflict"] is True
+    assert path.read_bytes() == before
+    assert publish.call_count == 3
+    assert malformed_project.read_bytes() == original
+    assert todos_repo.active_project() == "a"
+
+    selected = bridge({"action": "select", "project": "b"})
+    assert selected["ok"] is True
+    assert selected["workspace"]["active_project"] == "b"
+    assert bridge({"action": "read"})["workspace"]["project"] == "b"
+    empty_result = bridge({"action": "read", "project": "empty"})
+    assert empty_result["ok"] is True
+    assert empty_result["workspace"]["items"] == []
+    assert todos_repo.active_project() == "b"
+
+
+@pytest.mark.parametrize("action", ["read", "select", "add", "update", "delete"])
+def test_bridge_malformed_selected_project_fails_without_editing(
+    malformed_project, bridge, monkeypatch, action
+):
+    original = malformed_project.read_bytes()
+    monkeypatch.setattr(todos_repo, "ensure_repo", lambda: (True, ""))
+    publish = Mock()
+    monkeypatch.setattr(todos_repo, "commit_and_push", publish)
+    result = bridge(
+        {
+            "action": action,
+            "project": "a",
+            "id": "b" * 32,
+            "text": "new",
+            "revision": task_model.revision(original.decode()),
+        }
+    )
+    assert result == {"ok": False, "error": "Invalid or duplicate task ID"}
+    assert malformed_project.read_bytes() == original
+    publish.assert_not_called()
 
 
 def test_telegram_priority_uses_shared_operations(chat, monkeypatch):
