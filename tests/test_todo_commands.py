@@ -6,7 +6,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from ai_pm_agent import todos_repo
+from ai_pm_agent import config, task_model, todos_repo
 from ai_pm_agent.bot import todos
 
 
@@ -46,6 +46,63 @@ def test_completed_todo_reports_failed_push(chat, monkeypatch):
     assert (
         chat.message.reply_text.await_args.args[0] == "⚠️ Done: add tests\npush rejected"
     )
+
+
+@pytest.mark.parametrize("name", ["todo_done", "todo_list"])
+def test_invalid_task_id_replies_without_publication(name, chat, monkeypatch):
+    from pathlib import Path
+
+    path = Path(config.TODOS_REPO_PATH) / "projects" / "alpha" / "todo.md"
+    path.parent.mkdir(parents=True)
+    content = '- [ ] broken <!-- pm-task:{"id":"invalid"} -->\n'
+    path.write_text(content)
+    monkeypatch.setattr(todos_repo, "active_project", lambda: "alpha")
+    monkeypatch.setattr(todos_repo, "ensure_repo", lambda: (True, ""))
+    publish = Mock()
+    monkeypatch.setattr(todos_repo, "commit_and_push", publish)
+
+    asyncio.run(getattr(todos, name)(chat, SimpleNamespace(args=["1"])))
+
+    chat.message.reply_text.assert_awaited_once_with("Invalid or duplicate task ID")
+    publish.assert_not_called()
+    assert path.read_text() == content
+
+
+@pytest.mark.parametrize(
+    "name,operation",
+    [("todo_done", "complete_todo"), ("todo_list", "numbered_todos")],
+)
+def test_revision_conflict_replies_without_publication(
+    name, operation, chat, monkeypatch
+):
+    message = "This list changed. Refresh and review before saving again."
+    monkeypatch.setattr(todos_repo, "active_project", lambda: "alpha")
+    monkeypatch.setattr(todos_repo, "ensure_repo", lambda: (True, ""))
+    monkeypatch.setattr(
+        todos_repo, operation, Mock(side_effect=task_model.TaskConflictError(message))
+    )
+    publish = Mock()
+    monkeypatch.setattr(todos_repo, "commit_and_push", publish)
+
+    asyncio.run(getattr(todos, name)(chat, SimpleNamespace(args=["1"])))
+
+    chat.message.reply_text.assert_awaited_once_with(message)
+    publish.assert_not_called()
+
+
+def test_completed_todo_publishes_and_renumbers(chat, monkeypatch):
+    monkeypatch.setattr(todos_repo, "active_project", lambda: "alpha")
+    monkeypatch.setattr(todos_repo, "ensure_repo", lambda: (True, ""))
+    publish = Mock(return_value=(True, ""))
+    monkeypatch.setattr(todos_repo, "commit_and_push", publish)
+    todos_repo.add_todo("alpha", "first")
+    todos_repo.add_todo("alpha", "second")
+
+    asyncio.run(todos.todo_done(chat, SimpleNamespace(args=["1"])))
+
+    publish.assert_called_once_with("todos: complete in alpha")
+    chat.message.reply_text.assert_awaited_once_with("✅ Done: first\n")
+    assert todos_repo.numbered_todos("alpha") == (True, "1. second\n\n✅ 1 done")
 
 
 def test_todo_add_stamps_date_and_list_hides_metadata(chat, monkeypatch):

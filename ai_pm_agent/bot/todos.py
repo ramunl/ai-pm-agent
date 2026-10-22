@@ -88,7 +88,11 @@ async def todo_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     project = await _require_active_project(update)
     if project is None or not await require_repository(update, todos_repo.ensure_repo):
         return
-    ok, body = todos_repo.numbered_todos(project)
+    try:
+        ok, body = todos_repo.numbered_todos(project)
+    except ValueError as error:
+        await reply(update, str(error))
+        return
     await reply(update, f"📋 {project} todos:\n{body}")
 
 
@@ -126,8 +130,14 @@ async def todo_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     if not await require_repository(update, todos_repo.ensure_repo):
         return
+    number = int(context.args[0])
+    try:
+        result = todos_repo.complete_todo(project, number)
+    except ValueError as error:
+        await reply(update, str(error))
+        return
     await publish_mutation(
         update,
-        todos_repo.complete_todo(project, int(context.args[0])),
+        result,
         partial(todos_repo.commit_and_push, f"todos: complete in {project}"),
     )
