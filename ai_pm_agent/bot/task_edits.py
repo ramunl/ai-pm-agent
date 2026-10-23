@@ -60,7 +60,11 @@ async def edit_task(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             update,
             result.get("error")
             or result.get("warning")
-            or "Todo updated and pushed to GitHub.",
+            or (
+                "Todo updated and pushed to GitHub."
+                if result.get("published") is True
+                else "Todo updated locally; GitHub publication was not confirmed."
+            ),
         )
     except ValueError as error:
         await reply(update, str(error))

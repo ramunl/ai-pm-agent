@@ -47,9 +47,7 @@ def commit_and_push(repository: RepositoryConfig, message: str) -> tuple[bool, s
         if not ok:
             return False, output
     ok, output = run(["git", "commit", "-m", message], cwd=repository.path)
-    if not ok:
-        if "nothing to commit" in output:
-            return True, "No changes to push."
+    if not ok and "nothing to commit" not in output:
         return False, output
     ok, output = run(["git", "push", "origin", "main"], cwd=repository.path)
     if not ok:

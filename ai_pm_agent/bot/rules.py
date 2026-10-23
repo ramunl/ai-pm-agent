@@ -75,6 +75,10 @@ async def addrule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             "Usage: /addrule <file> | <rule text>",
         )
         return
+    ok, message = rules_repo.validate_rule_name(name)
+    if not ok:
+        await reply(update, message)
+        return
     if not await require_repository(update, rules_repo.ensure_repo):
         return
     await publish_mutation(

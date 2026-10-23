@@ -6,8 +6,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from ai_pm_agent import config, task_model, todos_repo
-from ai_pm_agent.bot import todos
+from ai_pm_agent import config, git_repo, task_model, task_service, todos_repo
+from ai_pm_agent.bot import task_edits, todos
 
 
 @pytest.mark.parametrize("name", ["todo_add", "todo_done", "todo_list"])
@@ -46,6 +46,59 @@ def test_completed_todo_reports_failed_push(chat, monkeypatch):
     assert (
         chat.message.reply_text.await_args.args[0] == "⚠️ Done: add tests\npush rejected"
     )
+
+
+@pytest.mark.parametrize("pushed", [True, False])
+def test_noop_status_reports_push_outcome(chat, monkeypatch, pushed):
+    from pathlib import Path
+
+    todos_repo.set_active_project("alpha")
+    todos_repo.add_todo("alpha", "first")
+    path = Path(config.TODOS_REPO_PATH) / "projects/alpha/todo.md"
+    content = path.read_bytes()
+    monkeypatch.setattr(todos_repo, "ensure_repo", lambda: (True, ""))
+    command = Mock(
+        side_effect=[(True, "")] * 3
+        + [(False, "nothing to commit, working tree clean"), (pushed, "offline")]
+    )
+    monkeypatch.setattr(git_repo, "run", command)
+    chat.message.text = "/todo_status 1 open"
+
+    asyncio.run(task_edits.edit_task(chat, SimpleNamespace(args=["1", "open"])))
+
+    chat.message.reply_text.assert_awaited_once_with(
+        "Todo updated and pushed to GitHub."
+        if pushed
+        else "Saved locally; GitHub sync failed. Do not add the item again."
+    )
+    command.assert_called_with(
+        ["git", "push", "origin", "main"], cwd=config.TODOS_REPO_PATH
+    )
+    assert path.read_bytes() == content
+
+
+@pytest.mark.parametrize(
+    "result,expected",
+    [
+        (
+            {"published": False},
+            "Todo updated locally; GitHub publication was not confirmed.",
+        ),
+        ({}, "Todo updated locally; GitHub publication was not confirmed."),
+        ({"published": True, "warning": "warning"}, "warning"),
+        ({"published": False, "error": "error", "warning": "warning"}, "error"),
+    ],
+)
+def test_structured_edit_preserves_errors_and_requires_publication(
+    chat, monkeypatch, result, expected
+):
+    todos_repo.set_active_project("alpha")
+    todos_repo.add_todo("alpha", "first")
+    monkeypatch.setattr(todos_repo, "ensure_repo", lambda: (True, ""))
+    monkeypatch.setattr(task_service, "execute", lambda payload: result)
+    chat.message.text = "/todo_status 1 open"
+    asyncio.run(task_edits.edit_task(chat, SimpleNamespace(args=["1", "open"])))
+    chat.message.reply_text.assert_awaited_once_with(expected)
 
 
 @pytest.mark.parametrize("name", ["todo_done", "todo_list"])

@@ -56,6 +56,25 @@ from releasing protection while a cancelled command's worker still changes
 files. Cancellation stops subsequent command steps; completed local edits may
 remain unpublished if cancellation occurs before publication starts.
 
+
+`/addrule` accepts names matching `[A-Za-z0-9][A-Za-z0-9_.-]{0,79}`:
+1–80 ASCII characters, starting with a letter or digit, followed by letters,
+digits, underscores, dots or hyphens. The shared validator runs after owner
+authorization and required-argument checks, before synchronization, and again
+inside `add_rule` for direct callers. Absolute paths, separators, traversal and
+relative-path selectors such as `global/python.md` are rejected. Existing files
+can be selected by stem or filename; duplicate stems in different directories
+remain ambiguous and use the first sorted match. `/addrule` cannot disambiguate
+them with a relative path.
+
+Rule file targets (existing or new) and the repository root are resolved before
+directory creation, content reads or writes. Targets must remain within the
+resolved repository, including when file or directory symlinks are involved.
+Containment failures return a failed result and prevent publication; rule counts
+skip unsafe targets. New files still default to `global/`. These checks do not
+prevent a concurrent local process from swapping symlinks between validation and
+writing.
+
 Telegram `/todo_done` and `/todo_list` reply with the repository's validation or
 revision-conflict error text and stop without publication or a success reply.
 Their `ValueError` handling covers only `complete_todo` and `numbered_todos`;
@@ -65,9 +84,13 @@ continues to report repository validation failures through its failed result.
 
 After a successful local edit, the Git service configures the commit identity,
 stages changes, commits, and pushes `origin main`. Each Git failure stops the
-sequence. A clean tree reports that there are no changes to push. Publication
-failures use a warning reply instead of a success checkmark; local edits remain
-available when Git publication fails.
+sequence, except that "nothing to commit" still proceeds to push. No-op edits in
+both rules and TODO repositories retry publication of pending local commits.
+The push outcome determines publication success, including network or
+authentication failures on a clean tree. Publication failures use a warning reply
+instead of a success checkmark; local edits remain available when Git publication
+fails. The TODO bridge's `published` and `warning` fields reflect the retry result,
+and Telegram confirms a push only when `published` is true.
 
 The active TODO project continues to live in `TODOS_STATE_FILE`, separately from
 the coding agent's project selection. Done items remain `- [x]` markdown lines;
@@ -92,6 +115,15 @@ JSON bridge used by ai-dashboard through the installed `deploy/ai-pm-todos`
 wrapper. `task_lock.py` serializes CLI transactions and Telegram TODO handlers
 across processes. Bot adapters retain open-item numbering for compatibility;
 web requests use explicit project, stable ID and content revision.
+
+Workspace project summaries use `todos_repo.todo_summary()` to count checkbox
+markers without validating task metadata, including legacy lines and uppercase
+`X` completion markers. Malformed metadata in another project therefore does not
+block reads or mutation responses for a valid project. The selected project's
+items still use strict `task_model.load()` validation; selecting a malformed
+project returns a validation error until its metadata is repaired. Mutations
+retain strict validation and revision conflict checks. Reading or editing an
+explicit project does not change the independent PM active-project selection.
 
 ### todo.md metadata
 

@@ -7,11 +7,31 @@ name (e.g. 'kotlin', 'architecture') and a 1-based index within that file.
 """
 
 import logging
+import re
 from pathlib import Path
 
 from ai_pm_agent import config, git_repo
 
 logger = logging.getLogger(__name__)
+
+
+def validate_rule_name(name: str) -> tuple[bool, str]:
+    """Accept a bounded rule name without path selectors."""
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", name):
+        return True, ""
+    return False, (
+        "Invalid rule name. Use 1–80 ASCII letters, digits, underscores, dots or "
+        "hyphens, starting with a letter or digit; paths are not allowed."
+    )
+
+
+def _contained_path(path: Path) -> Path:
+    """Resolve a target and reject paths outside the resolved repository."""
+    root = Path(config.RULES_REPO_PATH).resolve()
+    resolved = path.resolve()
+    if not resolved.is_relative_to(root):
+        raise ValueError("Rule path is outside the rules repository.")
+    return resolved
 
 
 def ensure_repo() -> tuple[bool, str]:
@@ -44,8 +64,8 @@ def rule_counts() -> list[dict]:
     counts = []
     for path in _rule_files():
         try:
-            text = path.read_text(encoding="utf-8")
-        except OSError as error:
+            text = _contained_path(path).read_text(encoding="utf-8")
+        except (OSError, RuntimeError, ValueError) as error:
             logger.warning("Could not count rules in %s: %s", path, error)
             continue
         counts.append(
@@ -79,7 +99,10 @@ def read_rules(name: str) -> tuple[bool, str]:
     path = _resolve_file(name)
     found = path is not None
     if found:
-        return True, path.read_text(encoding="utf-8")
+        try:
+            return True, _contained_path(path).read_text(encoding="utf-8")
+        except (OSError, RuntimeError, ValueError) as error:
+            return False, f"Cannot read rule file: {error}"
     logger.info("Rule file not found for name: %s", name)
     return False, f"No rule file matching '{name}'."
 
@@ -113,21 +136,27 @@ def numbered_rules(name: str) -> tuple[bool, str]:
 
 def add_rule(name: str, rule_text: str) -> tuple[bool, str]:
     """Append a bullet rule to a file, creating the file if needed."""
+    ok, message = validate_rule_name(name)
+    if not ok:
+        return False, message
     path = _resolve_file(name)
     is_new_file = path is None
     if is_new_file:
         # New file goes under global/ by default.
         path = Path(config.RULES_REPO_PATH) / "global" / f"{name}.md"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        header = f"# {name} rules\n\n"
-        path.write_text(header, encoding="utf-8")
-        logger.info("Created new rule file: %s", path)
-
-    existing = path.read_text(encoding="utf-8")
-    needs_newline = existing and not existing.endswith("\n")
-    separator = "\n" if needs_newline else ""
-    path.write_text(existing + separator + f"- {rule_text}\n", encoding="utf-8")
-    rel = path.relative_to(config.RULES_REPO_PATH)
+    try:
+        path = _contained_path(path)
+        if is_new_file:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            existing = f"# {name} rules\n\n"
+        else:
+            existing = path.read_text(encoding="utf-8")
+        needs_newline = existing and not existing.endswith("\n")
+        separator = "\n" if needs_newline else ""
+        path.write_text(existing + separator + f"- {rule_text}\n", encoding="utf-8")
+    except (OSError, RuntimeError, ValueError) as error:
+        return False, f"Cannot add rule: {error}"
+    rel = path.relative_to(Path(config.RULES_REPO_PATH).resolve())
     return True, f"Added to {rel}"
 
 
@@ -143,7 +172,14 @@ def remove_rule(name: str, number: int) -> tuple[bool, str]:
             removed_text = lines[target].lstrip()[2:].strip()
             del lines[target]
             path = _resolve_file(name)
-            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            if path is None:
+                return False, f"No rule file matching '{name}'."
+            try:
+                _contained_path(path).write_text(
+                    "\n".join(lines) + "\n", encoding="utf-8"
+                )
+            except (OSError, RuntimeError, ValueError) as error:
+                return False, f"Cannot remove rule: {error}"
             return True, f"Removed: {removed_text}"
         logger.info("Rule number %s out of range for %s", number, name)
         return False, f"No rule #{number} in '{name}'."
