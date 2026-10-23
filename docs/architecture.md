@@ -37,6 +37,26 @@ Handlers reject unauthorized messages first and validate arguments before doing
 repository work. A repository is synchronized before reading or editing it.
 Synchronization failure stops the operation before any markdown mutation.
 
+Repository synchronization, mutation callables, and Git publication run via
+`asyncio.to_thread` in `bot/repository_actions.py`. Structured task edits also
+run `task_service.execute` (including its synchronization and publication) in a
+worker, as do their initial synchronization and workspace reads. Git timeouts
+still delay the requesting command, but leave the event loop available for
+Telegram polling and snapshot heartbeats.
+
+Telegram TODO and rules handlers hold the shared `task_lock.serialized` file
+lock across awaited repository operations, from synchronization through editing
+and publication. Rules use the same lock to prevent concurrent rules commands
+from interleaving. The event-loop handler owns and closes the lock handle; the
+worker does not acquire it again. `task_service.execute` relies on the caller's
+transaction lock and has no nested lock acquisition or thread-local lock state.
+The worker helper shields its task and, even after repeated cancellation, waits
+for worker completion before propagating cancellation. This prevents the handler
+from releasing protection while a cancelled command's worker still changes
+files. Cancellation stops subsequent command steps; completed local edits may
+remain unpublished if cancellation occurs before publication starts.
+
+
 `/addrule` accepts names matching `[A-Za-z0-9][A-Za-z0-9_.-]{0,79}`:
 1–80 ASCII characters, starting with a letter or digit, followed by letters,
 digits, underscores, dots or hyphens. The shared validator runs after owner

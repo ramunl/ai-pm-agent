@@ -174,3 +174,98 @@ def test_todo_add_stamps_date_and_list_hides_metadata(chat, monkeypatch):
     asyncio.run(todos.todo_list(chat, SimpleNamespace(args=[])))
     listing = chat.message.reply_text.await_args.args[0]
     assert listing == "📋 alpha todos:\n1. write docs"
+
+
+@pytest.mark.parametrize("stage", ["sync", "publish", "execute"])
+def test_cancelled_worker_keeps_transaction_locked(stage, chat, monkeypatch):
+    import threading
+
+    from ai_pm_agent import task_service
+    from ai_pm_agent.bot import task_edits
+
+    monkeypatch.setattr(todos_repo, "active_project", lambda: "alpha")
+    monkeypatch.setattr(todos_repo, "ensure_repo", lambda: (True, ""))
+    monkeypatch.setattr(todos_repo, "commit_and_push", lambda message: (True, ""))
+    todos_repo.add_todo("alpha", "original")
+    chat.message.text = "/todo_edit"
+
+    async def scenario():
+        started = asyncio.Event()
+        release = threading.Event()
+        loop = asyncio.get_running_loop()
+        events = []
+        owner = task_service if stage == "execute" else todos_repo
+        attribute = {
+            "sync": "ensure_repo",
+            "publish": "commit_and_push",
+            "execute": "execute",
+        }[stage]
+        original = getattr(owner, attribute)
+
+        def blocked(*args):
+            loop.call_soon_threadsafe(started.set)
+            assert release.wait(3)
+            result = original(*args)
+            events.append("worker finished")
+            return result
+
+        monkeypatch.setattr(owner, attribute, blocked)
+        handler = task_edits.edit_task if stage == "execute" else todos.todo_add
+        args = ["1", "updated"] if stage == "execute" else ["new"]
+        first = asyncio.create_task(handler(chat, SimpleNamespace(args=args)))
+        second = None
+        try:
+            await asyncio.wait_for(started.wait(), 1)
+            first.cancel()
+            await asyncio.sleep(0)
+            first.cancel()
+
+            async def following():
+                await todos.todo_use(chat, SimpleNamespace(args=["beta"]))
+                events.append("next command")
+
+            second = asyncio.create_task(following())
+            await asyncio.sleep(0.1)
+            assert not first.done()
+            assert not second.done()
+            assert events == []
+        finally:
+            release.set()
+            with pytest.raises(asyncio.CancelledError):
+                await first
+            if second is not None:
+                await asyncio.wait_for(second, 1)
+        assert events == ["worker finished", "next command"]
+        if stage == "execute":
+            assert task_service.workspace("alpha")["items"][0]["text"] == "updated"
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("failure", ["sync", "conflict", "publication"])
+def test_structured_edit_preserves_error_responses(failure, chat, monkeypatch):
+    from ai_pm_agent import task_service
+    from ai_pm_agent.bot import task_edits
+
+    monkeypatch.setattr(todos_repo, "active_project", lambda: "alpha")
+    todos_repo.add_todo("alpha", "original")
+    monkeypatch.setattr(
+        todos_repo, "ensure_repo", lambda: (failure != "sync", "offline")
+    )
+    monkeypatch.setattr(
+        todos_repo, "commit_and_push", lambda message: (False, "offline")
+    )
+    if failure == "conflict":
+        monkeypatch.setattr(
+            task_service,
+            "execute",
+            Mock(side_effect=task_model.TaskConflictError("Refresh first")),
+        )
+    chat.message.text = "/todo_edit"
+    asyncio.run(task_edits.edit_task(chat, SimpleNamespace(args=["1", "updated"])))
+    expected = {
+        "sync": "TODO sync failed: offline",
+        "conflict": "Refresh first",
+        "publication": "Saved locally; GitHub sync failed. Do not add the item again.",
+    }
+    chat.message.reply_text.assert_awaited_once_with(expected[failure])
