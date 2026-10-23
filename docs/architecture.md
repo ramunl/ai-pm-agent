@@ -78,6 +78,15 @@ wrapper. `task_lock.py` serializes CLI transactions and Telegram TODO handlers
 across processes. Bot adapters retain open-item numbering for compatibility;
 web requests use explicit project, stable ID and content revision.
 
+Workspace project summaries use `todos_repo.todo_summary()` to count checkbox
+markers without validating task metadata, including legacy lines and uppercase
+`X` completion markers. Malformed metadata in another project therefore does not
+block reads or mutation responses for a valid project. The selected project's
+items still use strict `task_model.load()` validation; selecting a malformed
+project returns a validation error until its metadata is repaired. Mutations
+retain strict validation and revision conflict checks. Reading or editing an
+explicit project does not change the independent PM active-project selection.
+
 ### todo.md metadata
 
 Machine metadata lives in one trailing comment per item, edited only through

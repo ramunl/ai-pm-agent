@@ -12,12 +12,12 @@ def workspace(project: str | None = None) -> dict:
     projects = []
     root = Path(config.TODOS_REPO_PATH)
     for name in todos_repo.list_projects():
-        items = task_model.load(root, name)["items"]
+        summary = todos_repo.todo_summary(name)
         projects.append(
             {
                 "name": name,
-                "open": sum(i["status"] != "done" for i in items),
-                "done": sum(i["status"] == "done" for i in items),
+                "open": len(summary["open"]),
+                "done": summary["done"],
             }
         )
     result = (
