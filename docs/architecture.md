@@ -37,6 +37,24 @@ Handlers reject unauthorized messages first and validate arguments before doing
 repository work. A repository is synchronized before reading or editing it.
 Synchronization failure stops the operation before any markdown mutation.
 
+`/addrule` accepts names matching `[A-Za-z0-9][A-Za-z0-9_.-]{0,79}`:
+1–80 ASCII characters, starting with a letter or digit, followed by letters,
+digits, underscores, dots or hyphens. The shared validator runs after owner
+authorization and required-argument checks, before synchronization, and again
+inside `add_rule` for direct callers. Absolute paths, separators, traversal and
+relative-path selectors such as `global/python.md` are rejected. Existing files
+can be selected by stem or filename; duplicate stems in different directories
+remain ambiguous and use the first sorted match. `/addrule` cannot disambiguate
+them with a relative path.
+
+Rule file targets (existing or new) and the repository root are resolved before
+directory creation, content reads or writes. Targets must remain within the
+resolved repository, including when file or directory symlinks are involved.
+Containment failures return a failed result and prevent publication; rule counts
+skip unsafe targets. New files still default to `global/`. These checks do not
+prevent a concurrent local process from swapping symlinks between validation and
+writing.
+
 Telegram `/todo_done` and `/todo_list` reply with the repository's validation or
 revision-conflict error text and stop without publication or a success reply.
 Their `ValueError` handling covers only `complete_todo` and `numbered_todos`;

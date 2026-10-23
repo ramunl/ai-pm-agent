@@ -117,3 +117,49 @@ def test_failed_rule_removal_is_not_published(chat, monkeypatch):
     asyncio.run(rules.removerule(chat, SimpleNamespace(args=["python", "9"])))
     publish.assert_not_called()
     assert "⚠️ No rule #9" in chat.message.reply_text.await_args.args[0]
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["../", "../../tmp/x", "global/python", r"global\python", "/tmp/x", "a" * 81],
+)
+def test_unsafe_add_rule_names_are_rejected_before_sync(name, chat, monkeypatch):
+    sync, add, publish = Mock(), Mock(), Mock()
+    monkeypatch.setattr(rules_repo, "ensure_repo", sync)
+    monkeypatch.setattr(rules_repo, "add_rule", add)
+    monkeypatch.setattr(rules_repo, "commit_and_push", publish)
+
+    asyncio.run(rules.addrule(chat, SimpleNamespace(args=[name, "|", "A rule"])))
+
+    sync.assert_not_called()
+    add.assert_not_called()
+    publish.assert_not_called()
+    assert "Invalid rule name" in chat.message.reply_text.await_args.args[0]
+
+
+@pytest.mark.parametrize("kind", ["file", "directory"])
+def test_containment_failure_is_not_published(tmp_path, chat, monkeypatch, kind):
+    root = tmp_path / "rules"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    kept = outside / "python.md"
+    kept.write_text("- Keep me\n")
+    if kind == "file":
+        (root / "python.md").symlink_to(kept)
+    else:
+        (root / "global").symlink_to(outside, target_is_directory=True)
+    monkeypatch.setattr(config, "RULES_REPO_PATH", str(root))
+    sync = Mock(return_value=(True, ""))
+    publish = Mock()
+    monkeypatch.setattr(rules_repo, "ensure_repo", sync)
+    monkeypatch.setattr(rules_repo, "commit_and_push", publish)
+    before = sorted(tmp_path.rglob("*"))
+
+    asyncio.run(rules.addrule(chat, SimpleNamespace(args=["python", "|", "A rule"])))
+
+    sync.assert_called_once_with()
+    publish.assert_not_called()
+    assert "outside the rules repository" in chat.message.reply_text.await_args.args[0]
+    assert sorted(tmp_path.rglob("*")) == before
+    assert kept.read_text() == "- Keep me\n"
