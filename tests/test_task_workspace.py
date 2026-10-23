@@ -10,7 +10,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from ai_pm_agent import config, task_cli, task_model, task_service, todos_repo
+from ai_pm_agent import config, git_repo, task_cli, task_model, task_service, todos_repo
 from ai_pm_agent.bot.task_edits import edit_task
 
 
@@ -168,6 +168,51 @@ def test_failed_push_reports_saved_workspace(monkeypatch):
     assert result["ok"] and not result["published"]
     assert "Saved locally" in result["warning"]
     assert result["workspace"]["items"][0]["status"] == "in_progress"
+
+
+@pytest.mark.parametrize("pushed", [True, False])
+def test_bridge_noop_status_retries_failed_publication(monkeypatch, capsys, pushed):
+    root = Path(config.TODOS_REPO_PATH)
+    before = seed(root)
+    monkeypatch.setattr(todos_repo, "ensure_repo", lambda: (True, ""))
+    command = Mock(
+        side_effect=[(True, "")] * 4
+        + [(False, "offline")]
+        + [(True, "")] * 3
+        + [(False, "nothing to commit, working tree clean"), (pushed, "retry outcome")]
+    )
+    monkeypatch.setattr(git_repo, "run", command)
+    payload = {
+        "action": "update",
+        "project": "app",
+        "id": before["items"][0]["id"],
+        "revision": before["revision"],
+        "status": "in_progress",
+    }
+    monkeypatch.setattr(task_cli.sys, "stdin", io.StringIO(json.dumps(payload)))
+    assert task_cli.main() == 0
+    first = json.loads(capsys.readouterr().out)
+    assert first["ok"] and first["published"] is False
+    assert "Saved locally" in first["warning"]
+    content = (root / "projects/app/todo.md").read_bytes()
+
+    payload["revision"] = first["workspace"]["revision"]
+    monkeypatch.setattr(task_cli.sys, "stdin", io.StringIO(json.dumps(payload)))
+    assert task_cli.main() == 0
+    retry = json.loads(capsys.readouterr().out)
+    assert retry["ok"] and retry["published"] is pushed
+    assert retry["warning"] == (None if pushed else first["warning"])
+    assert retry["message"] == ("Pushed to ai-todos." if pushed else "retry outcome")
+    assert retry["workspace"] == first["workspace"]
+    assert (root / "projects/app/todo.md").read_bytes() == content
+    assert command.call_count == 10
+    assert (
+        sum(
+            args.args[0] == ["git", "push", "origin", "main"]
+            for args in command.call_args_list
+        )
+        == 2
+    )
 
 
 def test_project_selection_is_independent_state():

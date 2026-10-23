@@ -64,9 +64,13 @@ continues to report repository validation failures through its failed result.
 
 After a successful local edit, the Git service configures the commit identity,
 stages changes, commits, and pushes `origin main`. Each Git failure stops the
-sequence. A clean tree reports that there are no changes to push. Publication
-failures use a warning reply instead of a success checkmark; local edits remain
-available when Git publication fails.
+sequence, except that "nothing to commit" still proceeds to push. No-op edits in
+both rules and TODO repositories retry publication of pending local commits.
+The push outcome determines publication success, including network or
+authentication failures on a clean tree. Publication failures use a warning reply
+instead of a success checkmark; local edits remain available when Git publication
+fails. The TODO bridge's `published` and `warning` fields reflect the retry result,
+and Telegram confirms a push only when `published` is true.
 
 The active TODO project continues to live in `TODOS_STATE_FILE`, separately from
 the coding agent's project selection. Done items remain `- [x]` markdown lines;
