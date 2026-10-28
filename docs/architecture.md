@@ -37,6 +37,16 @@ Handlers reject unauthorized messages first and validate arguments before doing
 repository work. A repository is synchronized before reading or editing it.
 Synchronization failure stops the operation before any markdown mutation.
 
+Missing repositories are cloned with `git clone --branch main`. Existing
+checkouts must have `HEAD` attached to `refs/heads/main`: the Git service checks
+`git symbolic-ref --quiet HEAD` before pulling `--ff-only origin main` and again
+before publication configures identity, stages, commits, or pushes. Other
+branches, detached HEAD, and inspection failures stop the operation with an
+error before subsequent Git mutations. Inspection error details are preserved.
+The service never switches branches; the owner must deliberately correct an
+unsupported checkout to protect local work. A publication guard failure leaves
+any preceding local edits unpublished.
+
 Repository synchronization, mutation callables, and Git publication run via
 `asyncio.to_thread` in `bot/repository_actions.py`. Structured task edits also
 run `task_service.execute` (including its synchronization and publication) in a

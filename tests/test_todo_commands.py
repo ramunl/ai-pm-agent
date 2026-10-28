@@ -58,7 +58,8 @@ def test_noop_status_reports_push_outcome(chat, monkeypatch, pushed):
     content = path.read_bytes()
     monkeypatch.setattr(todos_repo, "ensure_repo", lambda: (True, ""))
     command = Mock(
-        side_effect=[(True, "")] * 3
+        side_effect=[(True, "refs/heads/main")]
+        + [(True, "")] * 3
         + [(False, "nothing to commit, working tree clean"), (pushed, "offline")]
     )
     monkeypatch.setattr(git_repo, "run", command)
