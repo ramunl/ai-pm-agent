@@ -8,9 +8,10 @@ done items are "- [x] text". Items are referenced by a 1-based index over
 the OPEN items in the active project's list.
 
 Edited items carry a trailing ``<!-- pm-task:{...} -->`` comment owned by
-task_model: id, status, priority (high|normal|low) and, for items added since
-creation dates were introduced, ``created`` as a UTC ``YYYY-MM-DD`` date. The
-comment is stripped from every text shown in Telegram or the dashboard.
+task_model: id, status, type (feature|bug|notice), priority (high|normal|low)
+and, for items added since creation dates were introduced, ``created`` as a UTC
+``YYYY-MM-DD`` date. The comment is stripped from every text shown in Telegram
+or the dashboard.
 
 The active project is state owned by THIS agent, stored in a local file. It is
 deliberately independent of the coding agent's active project — the two are not
@@ -102,7 +103,8 @@ def open_items(project: str) -> list[dict]:
     """Open items in file order with their open-item number and sort metadata.
 
     ``index`` is the 1-based /todo_done number, ``created`` an ISO date or None
-    for older items, and ``priority`` the stored or default priority.
+    for older items, ``priority`` the stored or default priority, and ``type``
+    the stored type (default ``feature``).
     """
     path = _todo_path(project)
     if not path.is_file():
@@ -115,6 +117,7 @@ def open_items(project: str) -> list[dict]:
             "text": item["text"],
             "created": item["created"],
             "priority": item["priority"],
+            "type": item["type"],
         }
         for number, item in enumerate(open_only, start=1)
     ]
@@ -140,7 +143,7 @@ def numbered_todos(project: str) -> tuple[bool, str]:
         ]
         numbered = []
         for number, item in enumerate(items, start=1):
-            labels = []
+            labels = [item["type"].capitalize()]
             if item["priority"] != "normal":
                 labels.append(item["priority"])
             if item["status"] != "open":

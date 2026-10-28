@@ -192,17 +192,31 @@ Additional Telegram commands use the same structured task operations:
 
 Task text remains one Markdown checkbox line. The dashboard folds entered line
 breaks into spaces. Machine metadata lives in trailing `<!-- pm-task:{...} -->`
-comments: ID, status, priority and, for items added from now on, a UTC `created`
-date. Existing plain checkboxes default to Normal priority and have no creation
+comments: ID, status, type, priority and, for items added from now on, a UTC `created`
+date. Missing types default to Feature on plain and older structured tasks.
+Existing plain checkboxes default to Normal priority and have no creation
 date. Their IDs become persistent on the first edit to that project; all
 other paragraphs and completed history are preserved. IDs are distinct even
-when two tasks have identical text. Bot lists hide the metadata.
+when two tasks have identical text. Bot lists hide the metadata and show Feature,
+Bug or Notice alongside priority/status labels. Existing items therefore display
+Feature until their type is changed.
 
 The local JSON bridge is owned by this repository. The dashboard sends a fixed
 operation as JSON on stdin; it never edits TODO Markdown directly. All Telegram
 TODO operations and bridge transactions share a filesystem lock. Mutation
+requests accept `type` on add/update: exactly `feature`, `bug` or `notice`.
+Untyped adds (including Telegram adds) default to `feature`; updates that omit
+`type` preserve it. Invalid explicit types, including `null`, are rejected
+without editing TODO files. Workspace items return `type` for all tasks. Mutation
 requests include project, task ID and a content revision, so a stale screen
-cannot edit a different task. Add requests reuse their ID when retrying.
+cannot edit a different task. Add requests reuse their ID when retrying;
+retries with the same ID/text retain the stored type and identity.
+
+Snapshot `todos.items[]` also includes `type`, alongside `index`, `text`,
+`created` and `priority`. Format `1`, legacy `todos.open` strings, file order
+and open-item numbering are unchanged. Dashboard type display and editing via
+a selector are deferred to part 2 in ai-dashboard. See the
+[metadata and bridge contracts](docs/architecture.md#todomd-metadata) for details.
 
 A failed pull stops edits. A failed push reports “saved locally” and returns the
 updated workspace; **Sync todos** pulls and retries publishing existing commits.

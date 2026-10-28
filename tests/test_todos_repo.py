@@ -162,11 +162,11 @@ class TodosRepoTest(unittest.TestCase):
         lines = (
             "# app\n\n"
             f'- [ ] dated <!-- pm-task:{{"id":"{"a" * 32}","status":"open",'
-            '"priority":"high","created":"2026-10-01"} -->\n'
+            '"priority":"high","type":"feature","created":"2026-10-01"} -->\n'
             f'- [ ] undated <!-- pm-task:{{"id":"{"b" * 32}","status":"open",'
-            '"priority":"normal"} -->\n'
+            '"priority":"normal","type":"feature"} -->\n'
             f'- [ ] other <!-- pm-task:{{"id":"{"d" * 32}","status":"open",'
-            '"priority":"normal"} -->\n'
+            '"priority":"normal","type":"feature"} -->\n'
         )
         self._write("app", lines)
         state = task_model.load(self.repo, "app")
@@ -230,12 +230,14 @@ class TodosRepoTest(unittest.TestCase):
                     "text": "third, edited",
                     "created": "2026-10-03",
                     "priority": "high",
+                    "type": "feature",
                 },
                 {
                     "index": 2,
                     "text": "second",
                     "created": "2026-10-02",
                     "priority": "normal",
+                    "type": "feature",
                 },
             ],
         )
@@ -245,7 +247,7 @@ class TodosRepoTest(unittest.TestCase):
     def test_rendered_text_hides_metadata(self) -> None:
         self.todos.add_todo("app", "visible")
         _, body = self.todos.numbered_todos("app")
-        self.assertEqual(body, "1. visible")
+        self.assertEqual(body, "1. visible [Feature]")
         self.assertEqual(self.todos.todo_summary("app")["open"], ["visible"])
         self.assertNotIn("<!--", self.todos.open_items("app")[0]["text"])
 

@@ -11,6 +11,7 @@ from pathlib import Path
 
 STATUSES = ("open", "in_progress", "blocked", "done")
 PRIORITIES = ("high", "normal", "low")
+TYPES = ("feature", "bug", "notice")
 ITEM = re.compile(r"^(\s*)- \[([ xX])\] (.*)$")
 META = re.compile(r"\s*<!-- pm-task:(\{.*\}) -->$")
 
@@ -61,7 +62,8 @@ def parse_items(content: str, project: str) -> list[dict]:
 
     Each item has ``created`` as an ISO date string, or None for tasks written
     before creation dates were recorded, and ``priority`` from the metadata
-    (plain checkbox lines default to ``normal``).
+    (plain checkbox lines default to ``normal``). Missing ``type`` defaults
+    to ``feature`` for both plain and older structured tasks.
     """
     items = []
     ids = set()
@@ -86,6 +88,9 @@ def parse_items(content: str, project: str) -> list[dict]:
         elif status == "done":
             status = "open"
         priority = metadata.get("priority", "normal")
+        task_type = metadata.get("type", "feature")
+        if task_type not in TYPES:
+            raise ValueError("Invalid task type")
         if (
             not isinstance(item_id, str)
             or not re.fullmatch(r"[a-f0-9]{32}", item_id)
@@ -102,6 +107,7 @@ def parse_items(content: str, project: str) -> list[dict]:
                 "text": text,
                 "status": status,
                 "priority": priority,
+                "type": task_type,
                 "created": created,
                 "line": index,
                 "indent": indent,
@@ -139,8 +145,8 @@ def atomic_write(path: Path, content: str) -> None:
 
 
 def _render(item: dict) -> str:
-    metadata = {key: item[key] for key in ("id", "status", "priority")}
-    # Older tasks have no date; omitting the key keeps their lines byte-identical.
+    metadata = {key: item[key] for key in ("id", "status", "priority", "type")}
+    # Older tasks have no date; do not backfill it during edits.
     if item.get("created") is not None:
         metadata["created"] = item["created"]
     marker = "x" if item["status"] == "done" else " "
@@ -166,6 +172,8 @@ def _validate_fields(data: dict) -> None:
         raise ValueError("Unknown task status")
     if "priority" in data and data["priority"] not in PRIORITIES:
         raise ValueError("Unknown task priority")
+    if "type" in data and data["type"] not in TYPES:
+        raise ValueError("Unknown task type")
 
 
 def mutate(root: Path, project: str, action: str, data: dict) -> dict:
@@ -199,12 +207,13 @@ def mutate(root: Path, project: str, action: str, data: dict) -> dict:
             "text": data["text"].strip(),
             "status": data.get("status", "open"),
             "priority": data.get("priority", "normal"),
+            "type": data.get("type", "feature"),
             "created": today().isoformat(),
         }
     elif target is None:
         raise TaskConflictError("This todo no longer exists. Refresh the list.")
     elif action == "update":
-        for key in ("text", "status", "priority"):
+        for key in ("text", "status", "priority", "type"):
             if key in data:
                 target[key] = data[key].strip() if key == "text" else data[key]
     # Persist identities of legacy items together before their positions can shift.

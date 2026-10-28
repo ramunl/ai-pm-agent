@@ -156,7 +156,10 @@ def test_completed_todo_publishes_and_renumbers(chat, monkeypatch):
 
     publish.assert_called_once_with("todos: complete in alpha")
     chat.message.reply_text.assert_awaited_once_with("✅ Done: first\n")
-    assert todos_repo.numbered_todos("alpha") == (True, "1. second\n\n✅ 1 done")
+    assert todos_repo.numbered_todos("alpha") == (
+        True,
+        "1. second [Feature]\n\n✅ 1 done",
+    )
 
 
 def test_todo_add_stamps_date_and_list_hides_metadata(chat, monkeypatch):
@@ -174,7 +177,7 @@ def test_todo_add_stamps_date_and_list_hides_metadata(chat, monkeypatch):
     assert '"created":"2026-10-15"' in path.read_text()
     asyncio.run(todos.todo_list(chat, SimpleNamespace(args=[])))
     listing = chat.message.reply_text.await_args.args[0]
-    assert listing == "📋 alpha todos:\n1. write docs"
+    assert listing == "📋 alpha todos:\n1. write docs [Feature]"
 
 
 @pytest.mark.parametrize("stage", ["sync", "publish", "execute"])

@@ -29,7 +29,7 @@ immutable `RepositoryConfig` from current settings and delegate Git operations.
 Shared-core authorization and command catalogs remain in use. Application startup
 registers commands and starts the snapshot publisher; shutdown cancels and awaits
 the publisher. The dashboard snapshot format number and file permissions are
-unchanged; todo items gained additive sort fields (see below).
+unchanged; todo items gained additive sort and type fields (see below).
 
 ## Edit and publication flow
 
@@ -141,18 +141,35 @@ Machine metadata lives in one trailing comment per item, edited only through
 `task_model`:
 
 ```markdown
-- [ ] Ship the release <!-- pm-task:{"id":"<32 hex>","status":"open","priority":"high","created":"2026-10-15"} -->
+- [ ] Ship the release <!-- pm-task:{"id":"<32 hex>","status":"open","priority":"high","type":"feature","created":"2026-10-15"} -->
 ```
 
+- `type` is `feature`, `bug` or `notice`. Missing values on plain or older
+  structured items default to `feature`; rewrites persist that default. Explicit
+  invalid values (including `null`) are rejected in metadata and mutations.
 - `priority` is `high`, `normal` or `low`; plain checkbox lines read as `normal`.
 - `created` is the UTC `YYYY-MM-DD` date when the item was added. Only `add`
   stamps it. Edits, status changes, deletions of other items and manual line
   reordering keep it. Items written earlier have no `created` key and parse as
-  `None`. Dates are never backfilled, and rewrites leave the key out, so those
-  lines stay byte-identical.
+  `None`. Dates are never backfilled, and rewrites leave the date key out.
 - Telegram replies, the snapshot `text`/`open` fields and the bridge `text`
-  field never include the comment. The bridge returns `created` and `priority`
-  as separate item fields.
+  field never include the comment. The bridge returns `created`, `priority`
+  and `type` as separate item fields. Telegram open-item labels show Feature,
+  Bug or Notice alongside non-default priority/status labels, in file order.
+
+### Bridge type contract
+
+JSON `add` and `update` requests accept an optional `type` field with the exact
+canonical strings above. Untyped adds default to `feature`; omitted update fields
+retain the stored type, including requests from older dashboard clients. Reads
+and mutation responses return `workspace.items[].type` for open and done tasks.
+Explicit invalid types return `ok: false` without writing TODO files. Malformed
+stored types use the existing validation error handling.
+
+Type changes require the current content `revision` and stable task `id`, just
+like other edits. Retrying an add with the same ID and text returns the stored
+item without replacing its type, even if the retry omits or changes the type.
+Invalid explicit types are still rejected before retry handling.
 
 ### Snapshot todo fields
 
@@ -165,9 +182,13 @@ lists the same open items, capped at `MAX_OPEN_ITEMS` like `open`. Each item has
 | `text` | Item text without metadata |
 | `created` | ISO date string, or `null` for older items (sort these last) |
 | `priority` | `high`, `normal` or `low` (stored value, default `normal`) |
+| `type` | `feature`, `bug` or `notice` (stored value, default `feature`) |
 
 The field names are the contract with ai-dashboard browser-side sorting. The
-snapshot `format` stays `1` because the change only adds fields.
+snapshot `format` stays `1` because the change only adds fields. File order and
+open-item numbering remain unchanged. Dashboard type display and the type
+selector are deferred to part 2 in ai-dashboard; this repository owns only the
+metadata, bridge, snapshot and Telegram display.
 
 The snapshot remains the read-only availability fallback. Live editing reads the
 bridge for complete items, including done tasks. Rules editing remains in its

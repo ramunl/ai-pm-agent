@@ -4,7 +4,7 @@ The dashboard runs as its own service so it keeps working when this bot is
 down. It never talks to this process; it reads the file written here, which is
 the whole contract between the two. Todo and rule parsing stays in
 todos_repo / rules_repo, so the dashboard never needs to know their formats.
-Each active-project item has index, text, created and priority; see
+Each active-project item has index, text, created, priority and type; see
 docs/architecture.md for the field contract.
 
 Written when the content changes and at least every HEARTBEAT_SECONDS, so the
@@ -64,7 +64,8 @@ def build_content(version_info: dict) -> dict:
     if active:
         summary = todos_repo.todo_summary(active)
         # "open" stays for older dashboards; "items" lets the browser sort by
-        # index (file order), created (ISO date or null) or priority.
+        # index (file order), created (ISO date or null) or priority; type
+        # supplies the PM-owned classification for dashboard consumers.
         todos = {
             "project": active,
             "open": summary["open"][:MAX_OPEN_ITEMS],
