@@ -418,3 +418,193 @@ def test_sync_retries_pending_publication(monkeypatch):
     retry.assert_called_once()
     assert not result["published"]
     assert "still saved" in result["warning"]
+
+
+@pytest.mark.parametrize("task_type", ["feature", "bug", "notice"])
+def test_type_round_trip_updates_and_retry_preserve_identity(tmp_path, task_type):
+    before = seed(tmp_path)
+    assert {item["type"] for item in before["items"]} == {"feature"}
+    payload = {
+        "id": uuid.uuid4().hex,
+        "text": "typed",
+        "type": task_type,
+        "revision": before["revision"],
+    }
+    state = task_model.mutate(tmp_path, "app", "add", payload)
+    path = tmp_path / "projects/app/todo.md"
+    stored = path.read_bytes()
+    # An older caller retrying without a type must retain the stored value.
+    retry = {key: value for key, value in payload.items() if key != "type"}
+    assert task_model.mutate(tmp_path, "app", "add", retry) == state
+    assert path.read_bytes() == stored
+    state = task_model.mutate(
+        tmp_path,
+        "app",
+        "update",
+        {"id": payload["id"], "revision": state["revision"], "status": "done"},
+    )
+    item = state["items"][-1]
+    assert (item["id"], item["type"], item["status"]) == (
+        payload["id"],
+        task_type,
+        "done",
+    )
+    assert task_model.load(tmp_path, "app") == state
+    assert f'"type":"{task_type}"' in path.read_text()
+
+
+@pytest.mark.parametrize("task_type", ["", "Feature", "other", None, 1, [], {}])
+@pytest.mark.parametrize("action", ["add", "update"])
+def test_bridge_invalid_type_never_writes(bridge, monkeypatch, task_type, action):
+    root = Path(config.TODOS_REPO_PATH)
+    before = seed(root)
+    path = root / "projects/app/todo.md"
+    original = path.read_bytes()
+    monkeypatch.setattr(todos_repo, "ensure_repo", lambda: (True, ""))
+    publish = Mock()
+    monkeypatch.setattr(todos_repo, "commit_and_push", publish)
+    result = bridge(
+        {
+            "action": action,
+            "project": "app",
+            "id": before["items"][0]["id"],
+            "revision": before["revision"],
+            "text": "first",
+            "type": task_type,
+        }
+    )
+    assert result == {"ok": False, "error": "Unknown task type"}
+    assert path.read_bytes() == original
+    publish.assert_not_called()
+
+
+@pytest.mark.parametrize("task_type", ["", "Feature", "other", None, 1, [], {}])
+def test_invalid_stored_type_uses_bridge_error_handling(bridge, task_type):
+    root = Path(config.TODOS_REPO_PATH)
+    path = root / "projects/app/todo.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        "- [ ] bad <!-- pm-task:" + json.dumps({"type": task_type}) + " -->\n"
+    )
+    original = path.read_bytes()
+    assert bridge({"project": "app"}) == {"ok": False, "error": "Invalid task type"}
+    assert path.read_bytes() == original
+
+
+def test_bridge_type_changes_defaults_and_stale_revisions(bridge, monkeypatch):
+    monkeypatch.setattr(todos_repo, "ensure_repo", lambda: (True, ""))
+    monkeypatch.setattr(todos_repo, "commit_and_push", lambda _: (True, ""))
+    state = bridge(
+        {
+            "action": "add",
+            "project": "app",
+            "text": "new",
+            "revision": task_model.revision(""),
+        }
+    )["workspace"]
+    item_id = state["items"][0]["id"]
+    assert state["items"][0]["type"] == "feature"
+    stale = state["revision"]
+    for task_type in ("bug", "notice", "feature"):
+        state = bridge(
+            {
+                "action": "update",
+                "project": "app",
+                "id": item_id,
+                "revision": state["revision"],
+                "type": task_type,
+            }
+        )["workspace"]
+        assert state["items"][0]["type"] == task_type
+        state = bridge(
+            {
+                "action": "update",
+                "project": "app",
+                "id": item_id,
+                "revision": state["revision"],
+                "priority": "high",
+            }
+        )["workspace"]
+        assert state["items"][0]["type"] == task_type
+    path = Path(config.TODOS_REPO_PATH) / "projects/app/todo.md"
+    original = path.read_bytes()
+    result = bridge(
+        {
+            "action": "update",
+            "project": "app",
+            "id": item_id,
+            "revision": stale,
+            "type": "notice",
+        }
+    )
+    assert result["conflict"] is True
+    assert path.read_bytes() == original
+
+
+def test_telegram_type_labels_and_completion_preserve_file_order():
+    root = Path(config.TODOS_REPO_PATH)
+    state = seed(root, "- [ ] legacy\n- [x] completed\n")
+    for task_type in ("feature", "bug", "notice"):
+        state = task_model.mutate(
+            root,
+            "app",
+            "add",
+            {
+                "revision": state["revision"],
+                "text": task_type,
+                "type": task_type,
+                "priority": "high",
+                "status": "in_progress",
+            },
+        )
+    assert todos_repo.numbered_todos("app")[1] == (
+        "1. legacy [Feature]\n2. feature [Feature · high · in progress]\n"
+        "3. bug [Bug · high · in progress]\n4. notice [Notice · high · in progress]"
+        "\n\n✅ 1 done"
+    )
+    todos_repo.complete_todo("app", 3)
+    done = task_model.load(root, "app")["items"][3]
+    assert done["type"] == "bug" and done["status"] == "done"
+    assert [item["type"] for item in todos_repo.open_items("app")] == [
+        "feature",
+        "feature",
+        "notice",
+    ]
+
+
+@pytest.mark.parametrize("task_type", ["feature", "bug", "notice"])
+def test_bridge_typed_add_and_retry(bridge, monkeypatch, task_type):
+    monkeypatch.setattr(todos_repo, "ensure_repo", lambda: (True, ""))
+    monkeypatch.setattr(todos_repo, "commit_and_push", lambda _: (True, ""))
+    payload = {
+        "action": "add",
+        "project": "app",
+        "id": uuid.uuid4().hex,
+        "revision": task_model.revision(""),
+        "text": "typed",
+        "type": task_type,
+    }
+    state = bridge(payload)["workspace"]
+    assert state["items"][0]["type"] == task_type
+    payload["type"] = "notice" if task_type != "notice" else "bug"
+    assert bridge(payload)["workspace"] == state
+    assert bridge({"project": "app"})["workspace"] == state
+
+
+def test_older_metadata_defaults_to_feature_and_persists(tmp_path):
+    item_id = "a" * 32
+    state = seed(tmp_path, f'- [ ] old <!-- pm-task:{{"id":"{item_id}"}} -->\n')
+    assert state["items"][0]["type"] == "feature"
+    after = task_model.mutate(
+        tmp_path,
+        "app",
+        "update",
+        {
+            "id": item_id,
+            "revision": state["revision"],
+            "text": "edited",
+        },
+    )
+    assert after["items"][0]["type"] == "feature"
+    assert after["items"][0]["id"] == item_id
+    assert '"type":"feature"' in (tmp_path / "projects/app/todo.md").read_text()

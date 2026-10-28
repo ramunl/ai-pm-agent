@@ -104,6 +104,7 @@ class ContentTests(SnapshotTestCase):
                         "text": "fix proxy",
                         "created": None,
                         "priority": "normal",
+                        "type": "feature",
                     }
                 ],
                 "open_count": 1,
@@ -142,9 +143,9 @@ class ContentTests(SnapshotTestCase):
             f'- [x] gone <!-- pm-task:{{"id":"{"a" * 32}","status":"done",'
             '"priority":"low","created":"2026-09-01"} -->\n'
             f'- [ ] urgent <!-- pm-task:{{"id":"{"b" * 32}","status":"open",'
-            '"priority":"high","created":"2026-10-02"} -->\n'
+            '"priority":"high","type":"bug","created":"2026-10-02"} -->\n'
             f'- [ ] stuck <!-- pm-task:{{"id":"{"c" * 32}","status":"blocked",'
-            '"priority":"low"} -->\n',
+            '"priority":"low","type":"notice"} -->\n',
         )
         self.todos.set_active_project("app")
         todos = self.snapshot.build_content(VERSIONS)["todos"]
@@ -152,14 +153,27 @@ class ContentTests(SnapshotTestCase):
         self.assertEqual(
             todos["items"],
             [
-                {"index": 1, "text": "legacy", "created": None, "priority": "normal"},
+                {
+                    "index": 1,
+                    "text": "legacy",
+                    "created": None,
+                    "priority": "normal",
+                    "type": "feature",
+                },
                 {
                     "index": 2,
                     "text": "urgent",
                     "created": "2026-10-02",
                     "priority": "high",
+                    "type": "bug",
                 },
-                {"index": 3, "text": "stuck", "created": None, "priority": "low"},
+                {
+                    "index": 3,
+                    "text": "stuck",
+                    "created": None,
+                    "priority": "low",
+                    "type": "notice",
+                },
             ],
         )
         # Nulls survive the JSON file the dashboard reads.
@@ -169,6 +183,7 @@ class ContentTests(SnapshotTestCase):
         )
         saved = json.loads(path.read_text())["todos"]["items"][0]
         self.assertIsNone(saved["created"])
+        self.assertEqual(json.loads(path.read_text())["todos"]["items"], todos["items"])
 
 
 class PublisherTests(SnapshotTestCase):

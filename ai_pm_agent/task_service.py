@@ -59,7 +59,7 @@ def execute(payload: dict) -> dict:
         }
     data = {
         key: payload[key]
-        for key in ("id", "revision", "text", "status", "priority")
+        for key in ("id", "revision", "text", "status", "priority", "type")
         if key in payload
     }
     task_model.mutate(Path(config.TODOS_REPO_PATH), project, action, data)
