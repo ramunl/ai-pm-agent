@@ -176,8 +176,10 @@ def test_bridge_noop_status_retries_failed_publication(monkeypatch, capsys, push
     before = seed(root)
     monkeypatch.setattr(todos_repo, "ensure_repo", lambda: (True, ""))
     command = Mock(
-        side_effect=[(True, "")] * 4
+        side_effect=[(True, "refs/heads/main")]
+        + [(True, "")] * 4
         + [(False, "offline")]
+        + [(True, "refs/heads/main")]
         + [(True, "")] * 3
         + [(False, "nothing to commit, working tree clean"), (pushed, "retry outcome")]
     )
@@ -205,7 +207,7 @@ def test_bridge_noop_status_retries_failed_publication(monkeypatch, capsys, push
     assert retry["message"] == ("Pushed to ai-todos." if pushed else "retry outcome")
     assert retry["workspace"] == first["workspace"]
     assert (root / "projects/app/todo.md").read_bytes() == content
-    assert command.call_count == 10
+    assert command.call_count == 12
     assert (
         sum(
             args.args[0] == ["git", "push", "origin", "main"]
