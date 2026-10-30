@@ -160,7 +160,7 @@ def test_rule_sync_remains_serialized_through_cancellation(chat, monkeypatch):
 
 @pytest.mark.parametrize(
     "name",
-    ["../", "../../tmp/x", "global/python", r"global\python", "/tmp/x", "a" * 81],
+    ["../", "../../tmp/x", r"global\python", "/tmp/x", "a" * 81],
 )
 def test_unsafe_add_rule_names_are_rejected_before_sync(name, chat, monkeypatch):
     sync, add, publish = Mock(), Mock(), Mock()
@@ -204,3 +204,40 @@ def test_containment_failure_is_not_published(tmp_path, chat, monkeypatch, kind)
     assert "outside the rules repository" in chat.message.reply_text.await_args.args[0]
     assert sorted(tmp_path.rglob("*")) == before
     assert kept.read_text() == "- Keep me\n"
+
+
+@pytest.mark.parametrize("command", ["addrule", "removerule"])
+@pytest.mark.parametrize("selector", ["python", "python.md", "global/python.md"])
+def test_rule_commands_resolve_selectors_before_publication(
+    tmp_path, chat, monkeypatch, command, selector
+):
+    monkeypatch.setattr(config, "RULES_REPO_PATH", str(tmp_path))
+    paths = [tmp_path / "global/python.md", tmp_path / "projects/demo/python.md"]
+    for path in paths:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"- Keep\r\n")
+    sync = Mock(return_value=(True, ""))
+    publish = Mock(return_value=(True, "Published"))
+    monkeypatch.setattr(rules_repo, "ensure_repo", sync)
+    monkeypatch.setattr(rules_repo, "commit_and_push", publish)
+    args = [selector, "|", "Added"] if command == "addrule" else [selector, "1"]
+
+    asyncio.run(getattr(rules, command)(chat, SimpleNamespace(args=args)))
+
+    sync.assert_called_once_with()
+    response = chat.message.reply_text.await_args.args[0]
+    if "/" in selector:
+        publish.assert_called_once()
+        assert response.startswith("✅")
+        assert paths[0].read_text() == (
+            "- Keep\n- Added\n" if command == "addrule" else "\n"
+        )
+    else:
+        publish.assert_not_called()
+        assert "Ambiguous rule file" in response
+        assert response.index("global/python.md") < response.index(
+            "projects/demo/python.md"
+        )
+        assert paths[0].read_bytes() == b"- Keep\r\n"
+    assert paths[1].read_bytes() == b"- Keep\r\n"
+    assert sorted(tmp_path.rglob("*.md")) == sorted(paths)

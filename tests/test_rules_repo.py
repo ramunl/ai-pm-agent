@@ -59,7 +59,6 @@ def test_rule_counts_logs_unreadable_files(tmp_path, monkeypatch, caplog):
     [
         "../",
         "../../tmp/x",
-        "global/python",
         r"global\python",
         "/tmp/x",
         r"C:\tmp\x",
@@ -162,3 +161,121 @@ def test_repository_root_and_internal_symlinks_are_resolved(tmp_path, monkeypatc
     assert target.read_text() == "- First\n- Second\n"
     assert rules_repo.add_rule("new", "Created")[0]
     assert (root / "global/new.md").read_text() == "# new rules\n\n- Created\n"
+
+
+@pytest.fixture
+def duplicate_rules(rules_root):
+    paths = [rules_root / "projects/demo/python.md", rules_root / "global/python.md"]
+    for index, path in enumerate(paths):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(f"# Rules {index}\r\n- Keep {index}\r\n".encode())
+    return paths
+
+
+@pytest.mark.parametrize("name", ["python", "python.md", "PYTHON", "PYTHON.MD"])
+def test_ambiguous_selectors_never_edit_or_create(rules_root, duplicate_rules, name):
+    before = {path: path.read_bytes() for path in duplicate_rules}
+    files = sorted(rules_root.rglob("*"))
+    for result in (
+        rules_repo.read_rules(name),
+        rules_repo.numbered_rules(name),
+        rules_repo.add_rule(name, "Do not add"),
+        rules_repo.remove_rule(name, 1),
+    ):
+        ok, message = result
+        assert not ok
+        assert "Ambiguous rule file" in message
+        assert message.splitlines()[1:] == [
+            "global/python.md",
+            "projects/demo/python.md",
+        ]
+        assert {path: path.read_bytes() for path in duplicate_rules} == before
+        assert sorted(rules_root.rglob("*")) == files
+
+
+@pytest.mark.parametrize(
+    "selector",
+    ["projects/demo/python.md", "PROJECTS/DEMO/PYTHON", "projects/demo/python"],
+)
+def test_relative_selectors_target_only_selected_file(
+    rules_root, duplicate_rules, selector
+):
+    target, other = duplicate_rules
+    unchanged = other.read_bytes()
+    assert rules_repo.read_rules(selector)[0]
+    assert rules_repo.add_rule(selector, "Added")[0]
+    assert rules_repo.remove_rule(selector, 1) == (True, "Removed: Keep 0")
+    assert target.read_text() == "# Rules 0\n- Added\n"
+    assert other.read_bytes() == unchanged
+
+
+def test_exact_root_filename_wins_over_shorthand(rules_root, duplicate_rules):
+    root_file = rules_root / "python.md"
+    root_file.write_text("- Root\n")
+    before = [path.read_bytes() for path in duplicate_rules]
+    assert rules_repo.read_rules("python.md") == (True, "- Root\n")
+    assert rules_repo.add_rule("python.md", "Added")[0]
+    assert rules_repo.remove_rule("python.md", 1) == (True, "Removed: Root")
+    assert root_file.read_text() == "- Added\n"
+    assert [path.read_bytes() for path in duplicate_rules] == before
+
+
+@pytest.mark.parametrize("selector", ["PYTHON", "PYTHON.MD", "global/PYTHON"])
+def test_unique_case_insensitive_shorthand(rules_root, selector):
+    path = rules_root / "global/python.md"
+    path.write_text("- First\n")
+    assert rules_repo.read_rules(selector) == (True, "- First\n")
+    assert rules_repo.add_rule(selector, "Second")[0]
+    assert rules_repo.remove_rule(selector, 1)[0]
+    assert path.read_text() == "- Second\n"
+
+
+@pytest.mark.parametrize(
+    "selector", ["global/missing", "global/missing.md", "missing/python.md"]
+)
+def test_missing_relative_selectors_do_not_create_files(rules_root, selector):
+    before = sorted(rules_root.rglob("*"))
+    for result in (
+        rules_repo.read_rules(selector),
+        rules_repo.add_rule(selector, "New"),
+        rules_repo.remove_rule(selector, 1),
+    ):
+        assert not result[0]
+        assert "No rule file matching" in result[1]
+    assert sorted(rules_root.rglob("*")) == before
+
+
+@pytest.mark.parametrize(
+    "selector",
+    [
+        "../python.md",
+        "global/../python.md",
+        "/python.md",
+        "global//python.md",
+        "./python.md",
+        "global/python.md/",
+    ],
+)
+def test_unsafe_selectors_rejected_for_all_operations(rules_root, selector):
+    path = rules_root / "python.md"
+    path.write_bytes(b"- Keep\r\n")
+    for result in (
+        rules_repo.read_rules(selector),
+        rules_repo.add_rule(selector, "New"),
+        rules_repo.remove_rule(selector, 1),
+    ):
+        assert not result[0]
+        assert "Invalid rule name" in result[1]
+    assert path.read_bytes() == b"- Keep\r\n"
+
+
+@pytest.mark.parametrize("internal", [True, False])
+def test_exact_relative_symlink_containment(rules_root, tmp_path, internal):
+    target = (rules_root if internal else rules_root.parent) / "target-rules.md"
+    target.write_text("- Keep\n")
+    (rules_root / "global/link.md").symlink_to(target)
+    selector = "global/link.md"
+    assert rules_repo.read_rules(selector)[0] is internal
+    assert rules_repo.add_rule(selector, "New")[0] is internal
+    assert rules_repo.remove_rule(selector, 1)[0] is internal
+    assert target.read_text() == ("- New\n" if internal else "- Keep\n")

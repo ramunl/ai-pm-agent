@@ -67,15 +67,19 @@ files. Cancellation stops subsequent command steps; completed local edits may
 remain unpublished if cancellation occurs before publication starts.
 
 
-`/addrule` accepts names matching `[A-Za-z0-9][A-Za-z0-9_.-]{0,79}`:
-1–80 ASCII characters, starting with a letter or digit, followed by letters,
-digits, underscores, dots or hyphens. The shared validator runs after owner
-authorization and required-argument checks, before synchronization, and again
-inside `add_rule` for direct callers. Absolute paths, separators, traversal and
-relative-path selectors such as `global/python.md` are rejected. Existing files
-can be selected by stem or filename; duplicate stems in different directories
-remain ambiguous and use the first sorted match. `/addrule` cannot disambiguate
-them with a relative path.
+Rule selectors accept simple names or relative paths whose components match
+`[A-Za-z0-9][A-Za-z0-9_.-]{0,79}`. The shared validator runs for `/addrule`
+after authorization and required-argument checks, before synchronization, and
+inside repository lookup for read, add and remove. Absolute paths, backslashes,
+empty components and traversal are rejected.
+
+Lookup first prefers an exact relative path, including a root-level filename.
+Otherwise case-insensitive stems, filenames and relative paths with or without
+`.md` must match exactly one rule file. Multiple matches return an ambiguity
+error listing sorted relative paths. Read, add and remove propagate this error;
+no edit, fallback file creation or publication follows an ambiguous request.
+A missing relative selector also fails without creating a file. Only a missing
+simple name may create `global/<name>.md`, with the same 1–80 character bound.
 
 Rule file targets (existing or new) and the repository root are resolved before
 directory creation, content reads or writes. Targets must remain within the
