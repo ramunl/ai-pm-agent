@@ -29,16 +29,24 @@ code. Build that wiring first; review comes later.
 | /removerule \<file\> \<number\> | Remove rule by its number |
 | /sync | Pull the latest rules from GitHub |
 
-Files are referenced by stem name: `kotlin` → `global/kotlin.md`,
-`architecture` → `projects/channel-cast/architecture.md`. New files created
-via /addrule are placed under `global/`.
+Use exact relative paths from `/files`, such as `global/kotlin.md` or
+`projects/channel-cast/architecture.md`, with `/rules`, `/addrule` and
+`/removerule`. Exact paths take precedence. Case-insensitive stems, filenames
+and paths without `.md` also work when they match exactly one file. Ambiguous
+shorthand returns sorted matching relative paths without editing or publishing.
+
+`/addrule` creates missing files only from simple names, under `global/<name>.md`.
+Names and relative-path components must be 1–80 ASCII letters, digits,
+underscores, dots or hyphens, starting with a letter or digit. Relative selectors
+must identify existing files; missing paths never create files. Absolute paths,
+traversal and symlinks escaping the repository are rejected.
 
 ### Examples
 
 ```
 /addrule kotlin | Prefer sealed classes for UI state
 /rules kotlin
-/removerule kotlin 4
+/removerule global/kotlin.md 4
 ```
 
 ## How it connects to the coding agent

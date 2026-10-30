@@ -2,8 +2,8 @@
 
 A "rule file" is a markdown file anywhere in the repo (e.g. global/kotlin.md,
 projects/channel-cast/architecture.md). A "rule" is a single markdown bullet
-line ('- ...') within such a file. Rules are referenced by the file's stem
-name (e.g. 'kotlin', 'architecture') and a 1-based index within that file.
+line ('- ...') within such a file. Rules are referenced by exact relative path
+or unambiguous shorthand and a 1-based index within that file.
 """
 
 import logging
@@ -16,12 +16,16 @@ logger = logging.getLogger(__name__)
 
 
 def validate_rule_name(name: str) -> tuple[bool, str]:
-    """Accept a bounded rule name without path selectors."""
-    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", name):
+    """Accept simple names or safe relative selectors for existing rule files."""
+    if all(
+        re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", part)
+        for part in name.split("/")
+    ):
         return True, ""
     return False, (
-        "Invalid rule name. Use 1–80 ASCII letters, digits, underscores, dots or "
-        "hyphens, starting with a letter or digit; paths are not allowed."
+        "Invalid rule name. Use relative paths with 1–80 ASCII letters, digits, "
+        "underscores, dots or hyphens per component, starting with a letter "
+        "or digit; absolute paths and traversal are not allowed."
     )
 
 
@@ -79,30 +83,39 @@ def rule_counts() -> list[dict]:
 
 def _resolve_file(name: str) -> Path | None:
     """Find a rule file by stem, file name, or relative path."""
+    ok, message = validate_rule_name(name)
+    if not ok:
+        raise ValueError(message)
     candidates = _rule_files()
-    wanted = name.removesuffix(".md").lower()
+    root = Path(config.RULES_REPO_PATH)
     for path in candidates:
-        rel = str(path.relative_to(config.RULES_REPO_PATH)).lower()
-        matches = (
-            path.stem.lower() == wanted
-            or path.name.lower() == name.lower()
-            or rel == name.lower()
-            or rel.removesuffix(".md") == wanted
-        )
-        if matches:
+        if path.relative_to(root).as_posix() == name:
             return path
-    return None
+    wanted = name.lower().removesuffix(".md")
+    matches = [
+        path
+        for path in candidates
+        if path.stem.lower() == wanted
+        or path.name.lower() == name.lower()
+        or path.relative_to(root).as_posix().lower().removesuffix(".md") == wanted
+    ]
+    if len(matches) > 1:
+        paths = sorted(path.relative_to(root).as_posix() for path in matches)
+        raise ValueError(
+            f"Ambiguous rule file '{name}'. Use an exact relative path:\n"
+            + "\n".join(paths)
+        )
+    return matches[0] if matches else None
 
 
 def read_rules(name: str) -> tuple[bool, str]:
     """Return the full markdown content of a rule file."""
-    path = _resolve_file(name)
-    found = path is not None
-    if found:
-        try:
+    try:
+        path = _resolve_file(name)
+        if path is not None:
             return True, _contained_path(path).read_text(encoding="utf-8")
-        except (OSError, RuntimeError, ValueError) as error:
-            return False, f"Cannot read rule file: {error}"
+    except (OSError, RuntimeError, ValueError) as error:
+        return False, f"Cannot read rule file: {error}"
     logger.info("Rule file not found for name: %s", name)
     return False, f"No rule file matching '{name}'."
 
@@ -139,12 +152,16 @@ def add_rule(name: str, rule_text: str) -> tuple[bool, str]:
     ok, message = validate_rule_name(name)
     if not ok:
         return False, message
-    path = _resolve_file(name)
-    is_new_file = path is None
-    if is_new_file:
-        # New file goes under global/ by default.
-        path = Path(config.RULES_REPO_PATH) / "global" / f"{name}.md"
     try:
+        path = _resolve_file(name)
+        is_new_file = path is None
+        if is_new_file:
+            if "/" in name:
+                return False, (
+                    f"No rule file matching '{name}'. "
+                    "New global files require a simple name without a path."
+                )
+            path = Path(config.RULES_REPO_PATH) / "global" / f"{name}.md"
         path = _contained_path(path)
         if is_new_file:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -171,10 +188,10 @@ def remove_rule(name: str, number: int) -> tuple[bool, str]:
             target = bullets[number - 1]
             removed_text = lines[target].lstrip()[2:].strip()
             del lines[target]
-            path = _resolve_file(name)
-            if path is None:
-                return False, f"No rule file matching '{name}'."
             try:
+                path = _resolve_file(name)
+                if path is None:
+                    return False, f"No rule file matching '{name}'."
                 _contained_path(path).write_text(
                     "\n".join(lines) + "\n", encoding="utf-8"
                 )
