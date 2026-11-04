@@ -45,9 +45,9 @@ def test_existing_checkout_only_fast_forwards_main(repository, monkeypatch, git_
     ]
 
 
-@pytest.mark.parametrize("failed_step", range(6))
+@pytest.mark.parametrize("failed_step", range(7))
 def test_failed_git_step_stops_publication(repository, monkeypatch, failed_step):
-    responses = ([(True, "refs/heads/main")] + [(True, "ok")] * 5)[:failed_step] + [
+    responses = ([(True, "refs/heads/main")] + [(True, "ok")] * 6)[:failed_step] + [
         (False, "git failed")
     ]
     command = Mock(side_effect=responses)
@@ -71,18 +71,27 @@ def test_nothing_to_commit_returns_push_outcome(
         + [(True, "")] * 3
         + [(False, "nothing to commit, working tree clean")]
         + [(pushed, "push rejected" if not pushed else "Everything up-to-date")]
+        + [(True, "")]
     )
     monkeypatch.setattr(git_repo, "run", command)
     assert caller.commit_and_push("edit") == (
         pushed,
         f"Pushed to {label}." if pushed else "push rejected",
     )
-    assert command.call_count == 6
-    command.assert_called_with(["git", "push", "origin", "main"], cwd=path)
+    assert command.call_count == (7 if pushed else 6)
+    assert command.call_args_list[5] == call(
+        ["git", "push", "origin", "main"], cwd=path
+    )
+    if pushed:
+        assert command.call_args_list[6] == call(
+            ["git", "status", "--porcelain"], cwd=path
+        )
 
 
 def test_successful_publication_sets_identity_and_pushes_main(repository, monkeypatch):
-    command = Mock(side_effect=[(True, "refs/heads/main")] + [(True, "ok")] * 5)
+    command = Mock(
+        side_effect=[(True, "refs/heads/main")] + [(True, "ok")] * 5 + [(True, "")]
+    )
     monkeypatch.setattr(git_repo, "run", command)
     assert git_repo.commit_and_push(repository, "rules: edit") == (
         True,
@@ -95,7 +104,21 @@ def test_successful_publication_sets_identity_and_pushes_main(repository, monkey
         call(["git", "add", "-A"], cwd=repository.path),
         call(["git", "commit", "-m", "rules: edit"], cwd=repository.path),
         call(["git", "push", "origin", "main"], cwd=repository.path),
+        call(["git", "status", "--porcelain"], cwd=repository.path),
     ]
+
+
+def test_non_empty_status_returns_not_published(repository, monkeypatch):
+    command = Mock(
+        side_effect=[(True, "refs/heads/main")]
+        + [(True, "ok")] * 5
+        + [(True, " M todo.md")]
+    )
+    monkeypatch.setattr(git_repo, "run", command)
+    assert git_repo.commit_and_push(repository, "rules: edit") == (
+        False,
+        "Uncommitted changes remain in ai-rules.\n M todo.md",
+    )
 
 
 @pytest.mark.parametrize("entry_point", ["ensure_repo", "commit_and_push"])

@@ -22,7 +22,6 @@ import logging
 from pathlib import Path
 
 from ai_pm_agent import config, git_repo, task_model
-from ai_pm_agent.shell import run
 
 logger = logging.getLogger(__name__)
 
@@ -217,5 +216,5 @@ def _repository() -> git_repo.RepositoryConfig:
 
 
 def retry_publish() -> tuple[bool, str]:
-    """Push existing commits after a previous publication failure, without editing."""
-    return run(["git", "push", "origin", "main"], cwd=config.TODOS_REPO_PATH)
+    """Recover and publish edits left uncommitted by a failed publication."""
+    return git_repo.commit_and_push(_repository(), "todos: recover uncommitted edits")
