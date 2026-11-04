@@ -182,6 +182,7 @@ def test_bridge_noop_status_retries_failed_publication(monkeypatch, capsys, push
         + [(True, "refs/heads/main")]
         + [(True, "")] * 3
         + [(False, "nothing to commit, working tree clean"), (pushed, "retry outcome")]
+        + [(True, "")]
     )
     monkeypatch.setattr(git_repo, "run", command)
     payload = {
@@ -207,7 +208,7 @@ def test_bridge_noop_status_retries_failed_publication(monkeypatch, capsys, push
     assert retry["message"] == ("Pushed to ai-todos." if pushed else "retry outcome")
     assert retry["workspace"] == first["workspace"]
     assert (root / "projects/app/todo.md").read_bytes() == content
-    assert command.call_count == 12
+    assert command.call_count == (13 if pushed else 12)
     assert (
         sum(
             args.args[0] == ["git", "push", "origin", "main"]
@@ -418,6 +419,48 @@ def test_sync_retries_pending_publication(monkeypatch):
     retry.assert_called_once()
     assert not result["published"]
     assert "still saved" in result["warning"]
+
+
+def test_sync_recovers_edit_left_uncommitted_by_failed_commit(monkeypatch):
+    root = Path(config.TODOS_REPO_PATH)
+    before = seed(root)
+    monkeypatch.setattr(todos_repo, "ensure_repo", lambda: (True, ""))
+    command = Mock(
+        side_effect=[
+            (True, "refs/heads/main"),  # failed commit_and_push: main guard
+            (True, ""),  # config user.name
+            (True, ""),  # config user.email
+            (True, ""),  # add -A
+            (False, "commit failed"),  # commit fails, edit stays uncommitted
+            (True, "refs/heads/main"),  # retry_publish: main guard
+            (True, ""),  # config user.name
+            (True, ""),  # config user.email
+            (True, ""),  # add -A stages the pending edit
+            (True, ""),  # commit
+            (True, ""),  # push
+            (True, ""),  # status is clean
+        ]
+    )
+    monkeypatch.setattr(git_repo, "run", command)
+    result = task_service.execute(
+        {
+            "action": "update",
+            "project": "app",
+            "id": before["items"][0]["id"],
+            "revision": before["revision"],
+            "status": "in_progress",
+        }
+    )
+    assert result["ok"] and not result["published"]
+    assert "Saved locally" in result["warning"]
+    path = root / "projects/app/todo.md"
+    assert '"status":"in_progress"' in path.read_text()
+
+    retry = task_service.execute({"action": "sync"})
+    assert retry["ok"] and retry["published"] is True
+    assert retry["message"] == "Pushed to ai-todos."
+    assert command.call_count == 12
+    assert '"status":"in_progress"' in path.read_text()
 
 
 @pytest.mark.parametrize("task_type", ["feature", "bug", "notice"])

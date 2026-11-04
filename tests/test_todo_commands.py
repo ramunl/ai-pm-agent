@@ -61,6 +61,7 @@ def test_noop_status_reports_push_outcome(chat, monkeypatch, pushed):
         side_effect=[(True, "refs/heads/main")]
         + [(True, "")] * 3
         + [(False, "nothing to commit, working tree clean"), (pushed, "offline")]
+        + [(True, "")]
     )
     monkeypatch.setattr(git_repo, "run", command)
     chat.message.text = "/todo_status 1 open"
@@ -72,9 +73,14 @@ def test_noop_status_reports_push_outcome(chat, monkeypatch, pushed):
         if pushed
         else "Saved locally; GitHub sync failed. Do not add the item again."
     )
-    command.assert_called_with(
-        ["git", "push", "origin", "main"], cwd=config.TODOS_REPO_PATH
-    )
+    if pushed:
+        command.assert_called_with(
+            ["git", "status", "--porcelain"], cwd=config.TODOS_REPO_PATH
+        )
+    else:
+        command.assert_called_with(
+            ["git", "push", "origin", "main"], cwd=config.TODOS_REPO_PATH
+        )
     assert path.read_bytes() == content
 
 

@@ -75,4 +75,9 @@ def commit_and_push(repository: RepositoryConfig, message: str) -> tuple[bool, s
     ok, output = run(["git", "push", "origin", "main"], cwd=repository.path)
     if not ok:
         return False, output
+    ok, output = run(["git", "status", "--porcelain"], cwd=repository.path)
+    if not ok:
+        return False, output
+    if output:
+        return False, f"Uncommitted changes remain in {repository.label}.\n{output}"
     return True, f"Pushed to {repository.label}."
