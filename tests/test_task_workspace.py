@@ -117,6 +117,68 @@ def test_invalid_edit_leaves_file_untouched(tmp_path, fields):
     assert task_model.load(tmp_path, "app") == before
 
 
+def _separated_text(separator, placement):
+    if placement == "leading":
+        return f"{separator}first"
+    if placement == "trailing":
+        return f"first{separator}"
+    if placement == "embedded":
+        return f"first{separator}second"
+    return f"first{separator}- [ ] injected"
+
+
+@pytest.mark.parametrize("action", ["add", "update"])
+@pytest.mark.parametrize("separator", task_model.SPLITLINES_SEPARATORS + ("\r\n",))
+@pytest.mark.parametrize("placement", ["leading", "trailing", "embedded", "injection"])
+def test_rejects_splitlines_separators_in_task_text(
+    tmp_path, action, separator, placement
+):
+    before = seed(tmp_path)
+    path = tmp_path / "projects/app/todo.md"
+    original = path.read_bytes()
+    text = _separated_text(separator, placement)
+    if action == "add":
+        payload = {
+            "id": uuid.uuid4().hex,
+            "text": text,
+            "revision": before["revision"],
+        }
+    else:
+        payload = {
+            "id": before["items"][0]["id"],
+            "text": text,
+            "revision": before["revision"],
+        }
+    with pytest.raises(ValueError, match="one non-empty line"):
+        task_model.mutate(tmp_path, "app", action, payload)
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize("action", ["add", "update"])
+def test_valid_single_line_text_is_accepted(tmp_path, action):
+    before = seed(tmp_path)
+    if action == "add":
+        payload = {
+            "id": uuid.uuid4().hex,
+            "text": "  a valid single line  ",
+            "revision": before["revision"],
+        }
+        state = task_model.mutate(tmp_path, "app", "add", payload)
+        assert state["items"][-1]["text"] == "a valid single line"
+    else:
+        state = task_model.mutate(
+            tmp_path,
+            "app",
+            "update",
+            {
+                "id": before["items"][0]["id"],
+                "revision": before["revision"],
+                "text": "  a valid single line  ",
+            },
+        )
+        assert state["items"][0]["text"] == "a valid single line"
+
+
 def test_bot_completion_preserves_priority_and_hides_metadata(monkeypatch):
     root = Path(config.TODOS_REPO_PATH)
     state = seed(root)

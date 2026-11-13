@@ -15,6 +15,22 @@ TYPES = ("feature", "bug", "notice")
 ITEM = re.compile(r"^(\s*)- \[([ xX])\] (.*)$")
 META = re.compile(r"\s*<!-- pm-task:(\{.*\}) -->$")
 
+# Every separator ``str.splitlines()`` recognizes. A task body must stay a
+# single rendered line, so reject each in raw input before any trimming.
+SPLITLINES_SEPARATORS = (
+    "\n",  # LF
+    "\r",  # CR
+    "\v",  # VT
+    "\f",  # FF
+    "\x1c",  # FS
+    "\x1d",  # GS
+    "\x1e",  # RS
+    "\x85",  # NEL
+    chr(0x2028),  # LS
+    chr(0x2029),  # PS
+)
+_SPLITLINES_SEPARATOR = re.compile("[" + "".join(SPLITLINES_SEPARATORS) + "]")
+
 
 class TaskConflictError(ValueError):
     """The displayed task list is older than the stored version."""
@@ -161,8 +177,7 @@ def _validate_fields(data: dict) -> None:
         not isinstance(text, str)
         or not text.strip()
         or len(text) > 10000
-        or "\n" in text
-        or "\r" in text
+        or _SPLITLINES_SEPARATOR.search(text)
         or "<!-- pm-task:" in text
     ):
         raise ValueError(
