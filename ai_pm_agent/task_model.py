@@ -157,7 +157,7 @@ def _render(item: dict) -> str:
 
 def _validate_fields(data: dict) -> None:
     text = data.get("text")
-    if text is not None and (
+    if "text" in data and (
         not isinstance(text, str)
         or not text.strip()
         or len(text) > 10000

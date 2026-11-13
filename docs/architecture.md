@@ -163,6 +163,12 @@ Machine metadata lives in one trailing comment per item, edited only through
 
 ### Bridge type contract
 
+Task text is required for adds and optional for updates, including status-only
+updates. Whenever supplied, it must be a nonempty string containing one line,
+at most 10,000 characters, without a task metadata comment. Invalid text,
+including JSON `null`, returns `ok: false` with a validation error before TODO
+mutation or publication. Repository synchronization still precedes validation.
+
 JSON `add` and `update` requests accept an optional `type` field with the exact
 canonical strings above. Untyped adds default to `feature`; omitted update fields
 retain the stored type, including requests from older dashboard clients. Reads

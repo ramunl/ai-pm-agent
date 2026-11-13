@@ -234,6 +234,102 @@ def bridge(monkeypatch, capsys):
     return request
 
 
+@pytest.mark.parametrize("action", ["add", "update"])
+@pytest.mark.parametrize(
+    "text",
+    [
+        None,
+        "",
+        " \t ",
+        0,
+        False,
+        [],
+        {},
+        "line\nbreak",
+        "line\rbreak",
+        "<!-- pm-task:{} -->",
+        "x" * 10001,
+    ],
+    ids=[
+        "null",
+        "empty",
+        "whitespace",
+        "number",
+        "boolean",
+        "list",
+        "object",
+        "newline",
+        "carriage-return",
+        "metadata",
+        "too-long",
+    ],
+)
+def test_bridge_invalid_text_never_mutates(monkeypatch, bridge, action, text):
+    root = Path(config.TODOS_REPO_PATH)
+    before = seed(root)
+    path = root / "projects/app/todo.md"
+    original = path.read_bytes()
+    sync = Mock(return_value=(True, ""))
+    publish = Mock()
+    monkeypatch.setattr(todos_repo, "ensure_repo", sync)
+    monkeypatch.setattr(todos_repo, "commit_and_push", publish)
+
+    result = bridge(
+        {
+            "action": action,
+            "project": "app",
+            "id": uuid.uuid4().hex if action == "add" else before["items"][0]["id"],
+            "revision": before["revision"],
+            "text": text,
+        }
+    )
+
+    assert result == {
+        "ok": False,
+        "error": "Todo text must be one non-empty line, at most 10,000 characters",
+    }
+    assert path.read_bytes() == original
+    assert task_model.load(root, "app") == before
+    sync.assert_called_once_with()
+    publish.assert_not_called()
+
+
+@pytest.mark.parametrize("action", ["add", "update"])
+def test_bridge_omitted_text_only_valid_for_update(monkeypatch, bridge, action):
+    root = Path(config.TODOS_REPO_PATH)
+    before = seed(root)
+    path = root / "projects/app/todo.md"
+    original = path.read_bytes()
+    monkeypatch.setattr(todos_repo, "ensure_repo", lambda: (True, ""))
+    publish = Mock(return_value=(True, ""))
+    monkeypatch.setattr(todos_repo, "commit_and_push", publish)
+
+    result = bridge(
+        {
+            "action": action,
+            "project": "app",
+            "id": uuid.uuid4().hex if action == "add" else before["items"][0]["id"],
+            "revision": before["revision"],
+            "status": "done",
+        }
+    )
+
+    if action == "add":
+        assert result == {"ok": False, "error": "Todo text is required"}
+        assert path.read_bytes() == original
+        assert task_model.load(root, "app") == before
+        publish.assert_not_called()
+    else:
+        assert result["ok"] is True
+        assert result["published"] is True
+        after = task_model.load(root, "app")
+        assert after["items"][0]["status"] == "done"
+        assert [item["text"] for item in after["items"]] == [
+            item["text"] for item in before["items"]
+        ]
+        publish.assert_called_once_with("todos: update in app")
+
+
 @pytest.fixture(params=["duplicate", "invalid"])
 def malformed_project(request):
     path = Path(config.TODOS_REPO_PATH) / "projects/a/todo.md"
